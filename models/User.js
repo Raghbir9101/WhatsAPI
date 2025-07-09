@@ -142,7 +142,7 @@ const messageSchema = new mongoose.Schema({
   contactName: String,
   status: {
     type: String,
-    enum: ['sent', 'delivered', 'read', 'failed'],
+    enum: ['sent', 'delivered', 'read', 'failed', 'scheduled', 'cancelled'],
     default: 'sent'
   },
   campaignId: {

@@ -26,7 +26,11 @@ const MONGODB_URI = process.env.MONGODB_URI;
 
 // Connect to MongoDB
 mongoose.connect(MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
+  .then(() => {
+    console.log('Connected to MongoDB');
+    // Process any missed scheduled messages on startup
+    setTimeout(processScheduledMessages, 5000); // Wait 5 seconds for app to fully start
+  })
   .catch(err => console.error('MongoDB connection error:', err));
 
 // Configure multer for file uploads
@@ -337,6 +341,110 @@ class WhatsAppManager {
 }
 
 const whatsappManager = new WhatsAppManager();
+
+// Function to process scheduled messages
+async function processScheduledMessages() {
+  try {
+    console.log('Processing scheduled messages...');
+    
+    // Find all messages that are scheduled and past their scheduled time
+    const overdueMessages = await Message.find({
+      status: 'scheduled',
+      timestamp: { $lte: new Date() }
+    }).populate('userId');
+
+    console.log(`Found ${overdueMessages.length} overdue scheduled messages`);
+
+    for (const message of overdueMessages) {
+      try {
+        const client = whatsappManager.getClient(message.userId._id, message.instanceId);
+        if (client && whatsappManager.getClientStatus(message.userId._id, message.instanceId) === 'ready') {
+          const chatId = formatPhoneNumber(message.to);
+          const sentMessage = await client.sendMessage(chatId, message.content.text);
+          
+          // Update message status
+          await Message.findByIdAndUpdate(message._id, {
+            messageId: sentMessage.id._serialized,
+            status: 'sent',
+            timestamp: new Date()
+          });
+
+          // Update user and instance message counts
+          await Promise.all([
+            User.findByIdAndUpdate(message.userId._id, { $inc: { messagesSent: 1 } }),
+            WhatsAppInstance.findOneAndUpdate({ instanceId: message.instanceId }, { $inc: { messagesSent: 1 } })
+          ]);
+
+          console.log(`Sent overdue scheduled message to ${message.to}`);
+        } else {
+          console.log(`WhatsApp client not ready for user ${message.userId._id}, instance ${message.instanceId}`);
+          // Mark as failed if client is not available
+          await Message.findByIdAndUpdate(message._id, {
+            status: 'failed'
+          });
+        }
+      } catch (error) {
+        console.error(`Error sending overdue message to ${message.to}:`, error);
+        await Message.findByIdAndUpdate(message._id, {
+          status: 'failed'
+        });
+      }
+    }
+
+    // Schedule future messages
+    const futureMessages = await Message.find({
+      status: 'scheduled',
+      timestamp: { $gt: new Date() }
+    }).populate('userId');
+
+    console.log(`Found ${futureMessages.length} future scheduled messages`);
+
+    for (const message of futureMessages) {
+      const delay = new Date(message.timestamp).getTime() - Date.now();
+      if (delay > 0 && delay < 2147483647) { // Max safe setTimeout delay
+        setTimeout(async () => {
+          try {
+            // Re-check message status
+            const currentMessage = await Message.findById(message._id);
+            if (!currentMessage || currentMessage.status !== 'scheduled') {
+              return;
+            }
+
+            const client = whatsappManager.getClient(message.userId._id, message.instanceId);
+            if (client && whatsappManager.getClientStatus(message.userId._id, message.instanceId) === 'ready') {
+              const chatId = formatPhoneNumber(message.to);
+              const sentMessage = await client.sendMessage(chatId, message.content.text);
+              
+              await Message.findByIdAndUpdate(message._id, {
+                messageId: sentMessage.id._serialized,
+                status: 'sent',
+                timestamp: new Date()
+              });
+
+              await Promise.all([
+                User.findByIdAndUpdate(message.userId._id, { $inc: { messagesSent: 1 } }),
+                WhatsAppInstance.findOneAndUpdate({ instanceId: message.instanceId }, { $inc: { messagesSent: 1 } })
+              ]);
+
+              console.log(`Sent scheduled message to ${message.to}`);
+            } else {
+              throw new Error('WhatsApp client not ready');
+            }
+          } catch (error) {
+            console.error('Scheduled message send error:', error);
+            await Message.findByIdAndUpdate(message._id, {
+              status: 'failed'
+            });
+          }
+        }, delay);
+      }
+    }
+    
+    console.log('Finished processing scheduled messages');
+  } catch (error) {
+    console.error('Error processing scheduled messages:', error);
+  }
+}
 
 // Middleware to verify API key
 const verifyApiKey = async (req, res, next) => {
@@ -1981,6 +2089,841 @@ app.delete('/api/campaigns/:campaignId', verifyApiKey, async (req, res) => {
   } catch (error) {
     console.error('Delete campaign error:', error);
     res.status(500).json({ error: 'Failed to delete campaign' });
+  }
+});
+
+// Groups & Channels Management
+
+// Get all groups for a WhatsApp instance
+app.get('/api/groups', verifyApiKey, async (req, res) => {
+  const { instanceId } = req.query;
+  const user = req.user;
+
+  if (!instanceId) {
+    return res.status(400).json({ error: 'instanceId is required' });
+  }
+
+  try {
+    const instance = await WhatsAppInstance.findOne({
+      instanceId,
+      userId: user._id
+    });
+
+    if (!instance) {
+      return res.status(404).json({ error: 'WhatsApp instance not found' });
+    }
+
+    const client = whatsappManager.getClient(user._id, instanceId);
+    if (!client) {
+      return res.json({
+        instanceId,
+        groups: [],
+        totalGroups: 0,
+        message: 'WhatsApp client not initialized. Please connect your WhatsApp first.'
+      });
+    }
+
+    const clientStatus = whatsappManager.getClientStatus(user._id, instanceId);
+    if (clientStatus !== 'ready') {
+      return res.json({
+        instanceId,
+        groups: [],
+        totalGroups: 0,
+        message: `WhatsApp client not ready. Status: ${clientStatus}. Please ensure your WhatsApp is connected.`
+      });
+    }
+
+    const chats = await client.getChats();
+    const groups = chats.filter(chat => chat.isGroup);
+
+    const groupsData = await Promise.all(groups.map(async (group) => {
+      const participants = await group.participants;
+      return {
+        id: group.id._serialized,
+        name: group.name,
+        description: group.description,
+        participantCount: participants.length,
+        isOwner: group.owner === client.info.wid._serialized,
+        createdAt: group.createdAt,
+        lastMessage: group.lastMessage ? {
+          body: group.lastMessage.body,
+          timestamp: group.lastMessage.timestamp,
+          from: group.lastMessage.from
+        } : null
+      };
+    }));
+
+    res.json({
+      instanceId,
+      groups: groupsData,
+      totalGroups: groupsData.length
+    });
+  } catch (error) {
+    console.error('Get groups error:', error);
+    res.status(500).json({ error: 'Failed to retrieve groups' });
+  }
+});
+
+// Get group details
+app.get('/api/groups/:groupId', verifyApiKey, async (req, res) => {
+  const { groupId } = req.params;
+  const { instanceId } = req.query;
+  const user = req.user;
+
+  if (!instanceId) {
+    return res.status(400).json({ error: 'instanceId is required' });
+  }
+
+  try {
+    const instance = await WhatsAppInstance.findOne({
+      instanceId,
+      userId: user._id
+    });
+
+    if (!instance) {
+      return res.status(404).json({ error: 'WhatsApp instance not found' });
+    }
+
+    const client = whatsappManager.getClient(user._id, instanceId);
+    if (!client) {
+      return res.status(400).json({ error: 'WhatsApp client not initialized' });
+    }
+
+    const chat = await client.getChatById(groupId);
+    if (!chat.isGroup) {
+      return res.status(400).json({ error: 'Not a group chat' });
+    }
+
+    const participants = await chat.participants;
+    const participantsData = participants.map(participant => ({
+      id: participant.id._serialized,
+      isAdmin: participant.isAdmin,
+      isSuperAdmin: participant.isSuperAdmin
+    }));
+
+    res.json({
+      id: chat.id._serialized,
+      name: chat.name,
+      description: chat.description,
+      participants: participantsData,
+      participantCount: participants.length,
+      isOwner: chat.owner === client.info.wid._serialized,
+      createdAt: chat.createdAt,
+      inviteCode: chat.inviteCode
+    });
+  } catch (error) {
+    console.error('Get group details error:', error);
+    res.status(500).json({ error: 'Failed to retrieve group details' });
+  }
+});
+
+// Send message to group
+app.post('/api/groups/send-message', verifyApiKey, [
+  body('instanceId').notEmpty(),
+  body('groupId').notEmpty(),
+  body('message').notEmpty().isLength({ max: 4096 })
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const { instanceId, groupId, message } = req.body;
+  const user = req.user;
+
+  if (user.messagesSent >= user.monthlyLimit) {
+    return res.status(429).json({ error: 'Monthly message limit exceeded' });
+  }
+
+  try {
+    const instance = await WhatsAppInstance.findOne({
+      instanceId,
+      userId: user._id
+    });
+
+    if (!instance) {
+      return res.status(404).json({ error: 'WhatsApp instance not found' });
+    }
+
+    const client = whatsappManager.getClient(user._id, instanceId);
+    if (!client) {
+      return res.status(400).json({ error: 'WhatsApp client not initialized' });
+    }
+
+    const clientStatus = whatsappManager.getClientStatus(user._id, instanceId);
+    if (clientStatus !== 'ready') {
+      return res.status(400).json({ error: `WhatsApp client not ready. Status: ${clientStatus}` });
+    }
+
+    const sentMessage = await client.sendMessage(groupId, message);
+    
+    // Store outgoing group message
+    const messageRecord = new Message({
+      messageId: sentMessage.id._serialized,
+      instanceId: instanceId,
+      userId: user._id,
+      direction: 'outgoing',
+      from: instance.phoneNumber || instanceId,
+      to: groupId,
+      type: 'text',
+      content: { text: message },
+      isGroup: true,
+      groupId: groupId,
+      status: 'sent',
+      timestamp: new Date()
+    });
+    
+    await Promise.all([
+      User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
+      WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } }),
+      messageRecord.save()
+    ]);
+    
+    res.json({
+      success: true,
+      messageId: sentMessage.id._serialized,
+      instanceId,
+      groupId,
+      message,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Send group message error:', error);
+    res.status(500).json({ error: 'Failed to send group message' });
+  }
+});
+
+// Create new group
+app.post('/api/groups/create', verifyApiKey, [
+  body('instanceId').notEmpty(),
+  body('name').notEmpty().isLength({ min: 1, max: 100 }),
+  body('participants').isArray().isLength({ min: 1 })
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const { instanceId, name, participants } = req.body;
+  const user = req.user;
+
+  try {
+    const instance = await WhatsAppInstance.findOne({
+      instanceId,
+      userId: user._id
+    });
+
+    if (!instance) {
+      return res.status(404).json({ error: 'WhatsApp instance not found' });
+    }
+
+    const client = whatsappManager.getClient(user._id, instanceId);
+    if (!client) {
+      return res.status(400).json({ error: 'WhatsApp client not initialized' });
+    }
+
+    const clientStatus = whatsappManager.getClientStatus(user._id, instanceId);
+    if (clientStatus !== 'ready') {
+      return res.status(400).json({ error: `WhatsApp client not ready. Status: ${clientStatus}` });
+    }
+
+    // Format participant phone numbers
+    const formattedParticipants = participants.map(phone => formatPhoneNumber(phone));
+    
+    const group = await client.createGroup(name, formattedParticipants);
+    
+    res.json({
+      success: true,
+      groupId: group.gid._serialized,
+      groupName: name,
+      participants: formattedParticipants,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Create group error:', error);
+    res.status(500).json({ error: 'Failed to create group' });
+  }
+});
+
+// Schedule & Campaigns Management
+
+// Schedule a message
+app.post('/api/schedule/message', verifyApiKey, [
+  body('instanceId').notEmpty(),
+  body('to').notEmpty(),
+  body('message').notEmpty().isLength({ max: 4096 }),
+  body('scheduledAt').isISO8601()
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const { instanceId, to, message, scheduledAt } = req.body;
+  const user = req.user;
+
+  try {
+    const instance = await WhatsAppInstance.findOne({
+      instanceId,
+      userId: user._id
+    });
+
+    if (!instance) {
+      return res.status(404).json({ error: 'WhatsApp instance not found' });
+    }
+
+    const scheduledDate = new Date(scheduledAt);
+    if (scheduledDate <= new Date()) {
+      return res.status(400).json({ error: 'Scheduled time must be in the future' });
+    }
+
+    // Create scheduled message record
+    const scheduledMessage = {
+      instanceId,
+      userId: user._id,
+      to,
+      message,
+      scheduledAt: scheduledDate,
+      status: 'scheduled',
+      type: 'text'
+    };
+
+    // Store in database (you would extend your Message model to support scheduled messages)
+    const messageRecord = new Message({
+      messageId: `scheduled_${Date.now()}`,
+      instanceId,
+      userId: user._id,
+      direction: 'outgoing',
+      from: instance.phoneNumber || instanceId,
+      to,
+      type: 'text',
+      content: { text: message },
+      status: 'scheduled',
+      timestamp: scheduledDate
+    });
+
+    await messageRecord.save();
+
+    // Schedule the message using setTimeout (basic implementation)
+    // Note: For production, consider using a proper job queue like Bull/Agenda
+    const delay = scheduledDate.getTime() - Date.now();
+    if (delay > 0 && delay < 2147483647) { // Max safe setTimeout delay
+      setTimeout(async () => {
+        try {
+          // Re-fetch the message to check if it was cancelled
+          const currentMessage = await Message.findById(messageRecord._id);
+          if (!currentMessage || currentMessage.status !== 'scheduled') {
+            return; // Message was cancelled or already processed
+          }
+
+          const client = whatsappManager.getClient(user._id, instanceId);
+          if (client && whatsappManager.getClientStatus(user._id, instanceId) === 'ready') {
+            const chatId = formatPhoneNumber(to);
+            const sentMessage = await client.sendMessage(chatId, message);
+            
+            // Update message status and add the actual message ID
+            await Message.findByIdAndUpdate(messageRecord._id, {
+              messageId: sentMessage.id._serialized,
+              status: 'sent',
+              timestamp: new Date()
+            });
+
+            // Update user and instance message counts
+            await Promise.all([
+              User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
+              WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } })
+            ]);
+          } else {
+            throw new Error('WhatsApp client not ready');
+          }
+        } catch (error) {
+          console.error('Scheduled message send error:', error);
+          await Message.findByIdAndUpdate(messageRecord._id, {
+            status: 'failed'
+          });
+        }
+      }, delay);
+    }
+
+    res.json({
+      success: true,
+      messageId: messageRecord.messageId,
+      scheduledAt: scheduledDate,
+      message: 'Message scheduled successfully'
+    });
+  } catch (error) {
+    console.error('Schedule message error:', error);
+    res.status(500).json({ error: 'Failed to schedule message' });
+  }
+});
+
+// Get scheduled messages
+app.get('/api/schedule/messages', verifyApiKey, async (req, res) => {
+  const { instanceId, status = 'all', page = 1, limit = 20 } = req.query;
+  const user = req.user;
+
+  try {
+    const query = { 
+      userId: user._id
+    };
+
+    if (instanceId) {
+      const instance = await WhatsAppInstance.findOne({ instanceId, userId: user._id });
+      if (!instance) {
+        return res.status(404).json({ error: 'WhatsApp instance not found' });
+      }
+      query.instanceId = instanceId;
+    }
+
+    // Build query based on status
+    if (status === 'all') {
+      query.$or = [
+        { status: 'scheduled', timestamp: { $gt: new Date() } },
+        { status: { $in: ['sent', 'failed', 'cancelled'] }, messageId: { $regex: '^scheduled_' } }
+      ];
+    } else if (status === 'scheduled') {
+      query.status = 'scheduled';
+      query.timestamp = { $gt: new Date() };
+    } else {
+      query.status = status;
+      query.messageId = { $regex: '^scheduled_' };
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const totalScheduled = await Message.countDocuments(query);
+    
+    const scheduledMessages = await Message.find(query)
+      .sort({ timestamp: 1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    res.json({
+      scheduledMessages,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: totalScheduled,
+        pages: Math.ceil(totalScheduled / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('Get scheduled messages error:', error);
+    res.status(500).json({ error: 'Failed to retrieve scheduled messages' });
+  }
+});
+
+// Cancel scheduled message
+app.delete('/api/schedule/messages/:messageId', verifyApiKey, async (req, res) => {
+  const { messageId } = req.params;
+  const user = req.user;
+
+  try {
+    const message = await Message.findOneAndUpdate(
+      { messageId, userId: user._id, status: 'scheduled' },
+      { status: 'cancelled' },
+      { new: true }
+    );
+
+    if (!message) {
+      return res.status(404).json({ error: 'Scheduled message not found' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Scheduled message cancelled successfully',
+      messageId
+    });
+  } catch (error) {
+    console.error('Cancel scheduled message error:', error);
+    res.status(500).json({ error: 'Failed to cancel scheduled message' });
+  }
+});
+
+// Reports & Analytics
+
+// Get detailed analytics report
+app.get('/api/reports/analytics', verifyApiKey, async (req, res) => {
+  const { instanceId, startDate, endDate, granularity = 'daily' } = req.query;
+  const user = req.user;
+
+  try {
+    const query = { userId: user._id };
+    
+    if (instanceId) {
+      const instance = await WhatsAppInstance.findOne({ instanceId, userId: user._id });
+      if (!instance) {
+        return res.status(404).json({ error: 'WhatsApp instance not found' });
+      }
+      query.instanceId = instanceId;
+    }
+
+    // Date range filtering
+    if (startDate || endDate) {
+      query.timestamp = {};
+      if (startDate) query.timestamp.$gte = new Date(startDate);
+      if (endDate) query.timestamp.$lte = new Date(endDate);
+    }
+
+    // Granularity format mapping
+    const dateFormats = {
+      daily: '%Y-%m-%d',
+      weekly: '%Y-%U',
+      monthly: '%Y-%m',
+      yearly: '%Y'
+    };
+
+    const [
+      totalMessages,
+      messagesByDirection,
+      messagesByType,
+      messagesByStatus,
+      messagesOverTime,
+      topContacts,
+      campaignStats
+    ] = await Promise.all([
+      // Total messages
+      Message.countDocuments(query),
+      
+      // Messages by direction
+      Message.aggregate([
+        { $match: query },
+        { $group: { _id: '$direction', count: { $sum: 1 } } }
+      ]),
+      
+      // Messages by type
+      Message.aggregate([
+        { $match: query },
+        { $group: { _id: '$type', count: { $sum: 1 } } }
+      ]),
+      
+      // Messages by status
+      Message.aggregate([
+        { $match: query },
+        { $group: { _id: '$status', count: { $sum: 1 } } }
+      ]),
+      
+      // Messages over time
+      Message.aggregate([
+        { $match: query },
+        {
+          $group: {
+            _id: {
+              $dateToString: { format: dateFormats[granularity], date: '$timestamp' }
+            },
+            total: { $sum: 1 },
+            incoming: { $sum: { $cond: [{ $eq: ['$direction', 'incoming'] }, 1, 0] } },
+            outgoing: { $sum: { $cond: [{ $eq: ['$direction', 'outgoing'] }, 1, 0] } }
+          }
+        },
+        { $sort: { _id: 1 } }
+      ]),
+      
+      // Top contacts
+      Message.aggregate([
+        { $match: { ...query, direction: 'outgoing' } },
+        {
+          $group: {
+            _id: '$to',
+            messageCount: { $sum: 1 },
+            lastMessage: { $max: '$timestamp' }
+          }
+        },
+        { $sort: { messageCount: -1 } },
+        { $limit: 10 }
+      ]),
+      
+      // Campaign statistics
+      BulkCampaign.aggregate([
+        { $match: { userId: user._id } },
+        {
+          $group: {
+            _id: null,
+            totalCampaigns: { $sum: 1 },
+            completedCampaigns: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+            totalRecipients: { $sum: '$totalRecipients' },
+            totalSent: { $sum: '$sentCount' },
+            totalFailed: { $sum: '$failedCount' }
+          }
+        }
+      ])
+    ]);
+
+    res.json({
+      summary: {
+        totalMessages,
+        messagesByDirection: messagesByDirection.reduce((acc, item) => {
+          acc[item._id] = item.count;
+          return acc;
+        }, {}),
+        messagesByType: messagesByType.reduce((acc, item) => {
+          acc[item._id] = item.count;
+          return acc;
+        }, {}),
+        messagesByStatus: messagesByStatus.reduce((acc, item) => {
+          acc[item._id] = item.count;
+          return acc;
+        }, {})
+      },
+      timeline: messagesOverTime.map(item => ({
+        period: item._id,
+        total: item.total,
+        incoming: item.incoming,
+        outgoing: item.outgoing
+      })),
+      topContacts: topContacts.map(contact => ({
+        phoneNumber: contact._id,
+        messageCount: contact.messageCount,
+        lastMessage: contact.lastMessage
+      })),
+      campaigns: campaignStats[0] || {
+        totalCampaigns: 0,
+        completedCampaigns: 0,
+        totalRecipients: 0,
+        totalSent: 0,
+        totalFailed: 0
+      }
+    });
+  } catch (error) {
+    console.error('Get analytics error:', error);
+    res.status(500).json({ error: 'Failed to retrieve analytics' });
+  }
+});
+
+// Get message delivery report
+app.get('/api/reports/delivery', verifyApiKey, async (req, res) => {
+  const { instanceId, campaignId, startDate, endDate } = req.query;
+  const user = req.user;
+
+  try {
+    const query = { userId: user._id };
+    
+    if (instanceId) {
+      const instance = await WhatsAppInstance.findOne({ instanceId, userId: user._id });
+      if (!instance) {
+        return res.status(404).json({ error: 'WhatsApp instance not found' });
+      }
+      query.instanceId = instanceId;
+    }
+
+    if (campaignId) {
+      query.campaignId = campaignId;
+    }
+
+    if (startDate || endDate) {
+      query.timestamp = {};
+      if (startDate) query.timestamp.$gte = new Date(startDate);
+      if (endDate) query.timestamp.$lte = new Date(endDate);
+    }
+
+    const deliveryReport = await Message.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: {
+            status: '$status',
+            date: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $group: {
+          _id: '$_id.date',
+          statuses: {
+            $push: {
+              status: '$_id.status',
+              count: '$count'
+            }
+          },
+          total: { $sum: '$count' }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    const summary = await Message.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    res.json({
+      summary: summary.reduce((acc, item) => {
+        acc[item._id] = item.count;
+        return acc;
+      }, {}),
+      dailyReport: deliveryReport.map(day => ({
+        date: day._id,
+        total: day.total,
+        breakdown: day.statuses.reduce((acc, status) => {
+          acc[status.status] = status.count;
+          return acc;
+        }, {})
+      }))
+    });
+  } catch (error) {
+    console.error('Get delivery report error:', error);
+    res.status(500).json({ error: 'Failed to retrieve delivery report' });
+  }
+});
+
+// Get performance metrics
+app.get('/api/reports/performance', verifyApiKey, async (req, res) => {
+  const { instanceId, days = 30 } = req.query;
+  const user = req.user;
+
+  try {
+    const query = { userId: user._id };
+    
+    if (instanceId) {
+      const instance = await WhatsAppInstance.findOne({ instanceId, userId: user._id });
+      if (!instance) {
+        return res.status(404).json({ error: 'WhatsApp instance not found' });
+      }
+      query.instanceId = instanceId;
+    }
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(days));
+    query.timestamp = { $gte: startDate };
+
+    const [
+      messageVolume,
+      responseRate,
+      activeHours,
+      instancePerformance
+    ] = await Promise.all([
+      // Message volume trends
+      Message.aggregate([
+        { $match: query },
+        {
+          $group: {
+            _id: {
+              date: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } },
+              hour: { $hour: '$timestamp' }
+            },
+            count: { $sum: 1 }
+          }
+        },
+        {
+          $group: {
+            _id: '$_id.date',
+            hourlyVolume: {
+              $push: {
+                hour: '$_id.hour',
+                count: '$count'
+              }
+            },
+            dailyTotal: { $sum: '$count' }
+          }
+        },
+        { $sort: { _id: 1 } }
+      ]),
+      
+      // Response rate calculation
+      Message.aggregate([
+        { $match: { ...query, direction: 'outgoing' } },
+        {
+          $lookup: {
+            from: 'messages',
+            let: { to: '$to', timestamp: '$timestamp' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$from', '$$to'] },
+                      { $eq: ['$direction', 'incoming'] },
+                      { $gte: ['$timestamp', '$$timestamp'] },
+                      { $lte: ['$timestamp', { $add: ['$$timestamp', 3600000] }] } // 1 hour window
+                    ]
+                  }
+                }
+              }
+            ],
+            as: 'responses'
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            totalSent: { $sum: 1 },
+            totalResponded: { $sum: { $cond: [{ $gt: [{ $size: '$responses' }, 0] }, 1, 0] } }
+          }
+        }
+      ]),
+      
+      // Most active hours
+      Message.aggregate([
+        { $match: query },
+        {
+          $group: {
+            _id: { $hour: '$timestamp' },
+            count: { $sum: 1 }
+          }
+        },
+        { $sort: { count: -1 } }
+      ]),
+      
+      // Instance performance comparison
+      WhatsAppInstance.aggregate([
+        { $match: { userId: user._id } },
+        {
+          $lookup: {
+            from: 'messages',
+            let: { instanceId: '$instanceId' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$instanceId', '$$instanceId'] },
+                      { $gte: ['$timestamp', startDate] }
+                    ]
+                  }
+                }
+              }
+            ],
+            as: 'messages'
+          }
+        },
+        {
+          $project: {
+            instanceName: 1,
+            phoneNumber: 1,
+            messageCount: { $size: '$messages' },
+            isActive: 1,
+            status: 1
+          }
+        },
+        { $sort: { messageCount: -1 } }
+      ])
+    ]);
+
+    const responseRateData = responseRate[0] || { totalSent: 0, totalResponded: 0 };
+    const responseRatePercent = responseRateData.totalSent > 0 ? 
+      (responseRateData.totalResponded / responseRateData.totalSent * 100).toFixed(2) : 0;
+
+    res.json({
+      messageVolume: messageVolume,
+      responseRate: {
+        percentage: parseFloat(responseRatePercent),
+        totalSent: responseRateData.totalSent,
+        totalResponded: responseRateData.totalResponded
+      },
+      activeHours: activeHours.map(hour => ({
+        hour: hour._id,
+        messageCount: hour.count
+      })),
+      instancePerformance: instancePerformance
+    });
+  } catch (error) {
+    console.error('Get performance metrics error:', error);
+    res.status(500).json({ error: 'Failed to retrieve performance metrics' });
   }
 });
 

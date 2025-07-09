@@ -591,6 +591,233 @@ class ApiClient {
       method: 'DELETE',
     });
   }
+
+  // Groups & Channels
+  async getGroups(instanceId: string) {
+    return this.request<{
+      instanceId: string;
+      groups: {
+        id: string;
+        name: string;
+        description: string;
+        participantCount: number;
+        isOwner: boolean;
+        createdAt: string;
+        lastMessage?: {
+          body: string;
+          timestamp: number;
+          from: string;
+        };
+      }[];
+      totalGroups: number;
+      message?: string;
+    }>(`/groups?instanceId=${instanceId}`);
+  }
+
+  async getGroupDetails(groupId: string, instanceId: string) {
+    return this.request<{
+      id: string;
+      name: string;
+      description: string;
+      participants: {
+        id: string;
+        isAdmin: boolean;
+        isSuperAdmin: boolean;
+      }[];
+      participantCount: number;
+      isOwner: boolean;
+      createdAt: string;
+      inviteCode: string;
+    }>(`/groups/${groupId}?instanceId=${instanceId}`);
+  }
+
+  async createGroup(data: {
+    instanceId: string;
+    name: string;
+    participants: string[];
+  }) {
+    return this.request<{
+      success: boolean;
+      groupId: string;
+      groupName: string;
+      participants: string[];
+      timestamp: string;
+    }>('/groups/create', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async sendGroupMessage(data: {
+    instanceId: string;
+    groupId: string;
+    message: string;
+  }) {
+    return this.request<{
+      success: boolean;
+      messageId: string;
+      instanceId: string;
+      groupId: string;
+      message: string;
+      timestamp: string;
+    }>('/groups/send-message', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Schedule & Campaigns
+  async scheduleMessage(data: {
+    instanceId: string;
+    to: string;
+    message: string;
+    scheduledAt: string;
+  }) {
+    return this.request<{
+      success: boolean;
+      messageId: string;
+      scheduledAt: string;
+      message: string;
+    }>('/schedule/message', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getScheduledMessages(params: {
+    instanceId?: string;
+    status?: 'scheduled' | 'sent' | 'failed' | 'cancelled' | 'all';
+    page?: number;
+    limit?: number;
+  } = {}) {
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) {
+        searchParams.append(key, value.toString());
+      }
+    });
+
+    return this.request<{
+      scheduledMessages: Message[];
+      pagination: {
+        page: number;
+        limit: number;
+        total: number;
+        pages: number;
+      };
+    }>(`/schedule/messages?${searchParams}`);
+  }
+
+  async cancelScheduledMessage(messageId: string) {
+    return this.request<{
+      success: boolean;
+      message: string;
+      messageId: string;
+    }>(`/schedule/messages/${messageId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Reports & Analytics
+  async getAnalytics(params: {
+    instanceId?: string;
+    startDate?: string;
+    endDate?: string;
+    granularity?: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  } = {}) {
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) {
+        searchParams.append(key, value.toString());
+      }
+    });
+
+    return this.request<{
+      summary: {
+        totalMessages: number;
+        messagesByDirection: Record<string, number>;
+        messagesByType: Record<string, number>;
+        messagesByStatus: Record<string, number>;
+      };
+      timeline: {
+        period: string;
+        total: number;
+        incoming: number;
+        outgoing: number;
+      }[];
+      topContacts: {
+        phoneNumber: string;
+        messageCount: number;
+        lastMessage: string;
+      }[];
+      campaigns: {
+        totalCampaigns: number;
+        completedCampaigns: number;
+        totalRecipients: number;
+        totalSent: number;
+        totalFailed: number;
+      };
+    }>(`/reports/analytics?${searchParams}`);
+  }
+
+  async getDeliveryReport(params: {
+    instanceId?: string;
+    campaignId?: string;
+    startDate?: string;
+    endDate?: string;
+  } = {}) {
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) {
+        searchParams.append(key, value.toString());
+      }
+    });
+
+    return this.request<{
+      summary: Record<string, number>;
+      dailyReport: {
+        date: string;
+        total: number;
+        breakdown: Record<string, number>;
+      }[];
+    }>(`/reports/delivery?${searchParams}`);
+  }
+
+  async getPerformanceMetrics(params: {
+    instanceId?: string;
+    days?: number;
+  } = {}) {
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) {
+        searchParams.append(key, value.toString());
+      }
+    });
+
+    return this.request<{
+      messageVolume: {
+        _id: string;
+        hourlyVolume: { hour: number; count: number }[];
+        dailyTotal: number;
+      }[];
+      responseRate: {
+        percentage: number;
+        totalSent: number;
+        totalResponded: number;
+      };
+      activeHours: {
+        hour: number;
+        messageCount: number;
+      }[];
+      instancePerformance: {
+        instanceName: string;
+        phoneNumber: string;
+        messageCount: number;
+        isActive: boolean;
+        status: string;
+      }[];
+    }>(`/reports/performance?${searchParams}`);
+  }
 }
 
 export const apiClient = new ApiClient();
