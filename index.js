@@ -175,19 +175,31 @@ class WhatsAppManager {
           '--disable-accelerated-2d-canvas',
           '--no-first-run',
           '--no-zygote',
-          '--single-process',
           '--disable-gpu',
           '--disable-extensions',
           '--disable-background-timer-throttling',
           '--disable-backgrounding-occluded-windows',
           '--disable-renderer-backgrounding',
           '--disable-features=TranslateUI',
-          '--disable-ipc-flooding-protection',
           '--disable-web-security',
-          '--disable-features=VizDisplayCompositor'
+          '--disable-features=VizDisplayCompositor',
+          '--disable-crash-reporter',
+          '--disable-in-process-stack-traces',
+          '--disable-logging',
+          '--disable-default-apps',
+          '--mute-audio',
+          '--no-default-browser-check',
+          '--no-pings',
+          '--window-size=1366,768',
+          '--user-data-dir=/tmp/chrome-user-data',
+          '--data-path=/tmp/chrome-user-data',
+          '--homedir=/tmp/chrome-user-data',
+          '--disk-cache-dir=/tmp/chrome-cache'
         ],
         executablePath: chromePath,
-        timeout: 60000
+        timeout: 120000, // Increased timeout
+        ignoreDefaultArgs: ['--disable-extensions'],
+        ignoreHTTPSErrors: true
       };
     // }
 
@@ -199,15 +211,32 @@ class WhatsAppManager {
 
     try {
       console.log(`[WhatsAppManager] Initializing client for clientId: ${clientId}`);
+      console.log(`[WhatsAppManager] Chrome path: ${chromePath}`);
+      console.log(`[WhatsAppManager] Is Production: ${isProduction}`);
       console.log(`[WhatsAppManager] Starting client.initialize() call...`);
       
-      await client.initialize();
+      // Add timeout for initialization
+      const initPromise = client.initialize();
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Client initialization timeout after 2 minutes')), 120000);
+      });
+      
+      await Promise.race([initPromise, timeoutPromise]);
       console.log(`[WhatsAppManager] Client ${clientId} initialized successfully.`);
       return client;
     } catch (error) {
       console.error(`[WhatsAppManager] FAILED to initialize client ${clientId}:`, error);
+      console.error(`[WhatsAppManager] Error stack:`, error.stack);
       this.clients.delete(clientId);
       this.clientStatus.delete(clientId);
+      
+      // Try to destroy the client if it exists
+      try {
+        await client.destroy();
+      } catch (destroyError) {
+        console.error(`[WhatsAppManager] Error destroying failed client:`, destroyError);
+      }
+      
       throw error;
     }
   }
