@@ -166,6 +166,9 @@ class WhatsAppManager {
         console.error('Chrome/Chromium not found! Please install Chrome or set CHROME_BIN environment variable.');
       }
 
+      // Create unique user data directory for this client
+      const userDataDir = `/tmp/chrome-${clientId}-${Date.now()}`;
+      
       clientConfig.puppeteer = {
         headless: true,
         args: [
@@ -191,10 +194,10 @@ class WhatsAppManager {
           '--no-default-browser-check',
           '--no-pings',
           '--window-size=1366,768',
-          '--user-data-dir=/tmp/chrome-user-data',
-          '--data-path=/tmp/chrome-user-data',
-          '--homedir=/tmp/chrome-user-data',
-          '--disk-cache-dir=/tmp/chrome-cache'
+          `--user-data-dir=${userDataDir}`,
+          `--data-path=${userDataDir}`,
+          `--disk-cache-dir=${userDataDir}/cache`,
+          '--remote-debugging-port=0' // Use random available port
         ],
         executablePath: chromePath,
         timeout: 120000, // Increased timeout
@@ -412,7 +415,22 @@ class WhatsAppManager {
     const client = this.clients.get(clientId);
     
     if (client) {
-      await client.destroy();
+      try {
+        await client.destroy();
+      } catch (error) {
+        console.error(`Error destroying client ${clientId}:`, error);
+      }
+      
+      // Clean up user data directory
+      const userDataPattern = `/tmp/chrome-${clientId}-*`;
+      try {
+        const { execSync } = require('child_process');
+        execSync(`rm -rf ${userDataPattern}`, { stdio: 'ignore' });
+        console.log(`Cleaned up user data directories for ${clientId}`);
+      } catch (cleanupError) {
+        console.error(`Error cleaning up user data for ${clientId}:`, cleanupError);
+      }
+      
       this.clients.delete(clientId);
       this.clientStatus.delete(clientId);
       this.qrCodes.delete(instanceId);
