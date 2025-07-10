@@ -687,7 +687,7 @@ app.post('/api/numbers/:instanceId/initialize', verifyApiKey, async (req, res) =
     });
   } catch (error) {
     console.error('Initialize error:', error);
-    res.status(500).json({ error: 'Failed to initialize WhatsApp client' });
+    res.status(500).json({ error: 'Failed to initialize WhatsApp client', details: error });
   }
 });
 
