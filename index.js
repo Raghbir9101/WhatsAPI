@@ -131,16 +131,67 @@ class WhatsAppManager {
       }
     }
 
-    // const client = new Client({
-    //   authStrategy: new LocalAuth({
-    //     clientId: clientId,
-    //     dataPath: path.join(os.tmpdir(), 'whatsapp-api-sessions')
-    //   }),
-    //   puppeteer: {
-    //     headless: false // Keep this so we can see what's happening
-    //   }
-    // });
-    const client = new Client();
+    // Production-ready client configuration
+    const isProduction = process.env.NODE_ENV === 'production';
+    
+    const clientConfig = {
+      authStrategy: new LocalAuth({
+        clientId: clientId,
+        dataPath: path.join(os.tmpdir(), 'whatsapp-api-sessions')
+      })
+    };
+
+    // Add Puppeteer config only in production
+    // if (isProduction) {
+      // Try to find Chrome executable
+      const possibleChromePaths = [
+        process.env.CHROME_BIN,
+        '/usr/bin/google-chrome-stable',
+        '/usr/bin/google-chrome',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/chromium',
+        '/snap/bin/chromium'
+      ];
+      
+      let chromePath = null;
+      for (const path of possibleChromePaths) {
+        if (path && require('fs').existsSync(path)) {
+          chromePath = path;
+          console.log(`Found Chrome at: ${chromePath}`);
+          break;
+        }
+      }
+      
+      if (!chromePath) {
+        console.error('Chrome/Chromium not found! Please install Chrome or set CHROME_BIN environment variable.');
+      }
+
+      clientConfig.puppeteer = {
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--no-first-run',
+          '--no-zygote',
+          '--single-process',
+          '--disable-gpu',
+          '--disable-extensions',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--disable-features=TranslateUI',
+          '--disable-ipc-flooding-protection',
+          '--disable-web-security',
+          '--disable-features=VizDisplayCompositor'
+        ],
+        executablePath: chromePath,
+        timeout: 60000
+      };
+    // }
+
+    const client = new Client(clientConfig);
 
     await this.setupClientEvents(client, clientId, instanceId, instanceName);
     this.clients.set(clientId, client);
