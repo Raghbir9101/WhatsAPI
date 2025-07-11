@@ -3052,14 +3052,20 @@ app.get('/api/health', async (req, res) => {
 
 
 
-// Error handling middleware
+// Catch-all route for SPA - must be BEFORE error handling middleware
+app.get('*', (req, res) => {
+  // Don't serve index.html for API routes
+  if (req.originalUrl.startsWith('/api/')) {
+    return res.status(404).json({ error: 'API endpoint not found' });
+  }
+  
+  res.sendFile(path.join(__dirname, "frontend", "dist", "index.html"));
+});
+
+// Error handling middleware - must be LAST
 app.use((error, req, res, next) => {
   console.error('Error:', error.stack);
   res.status(500).json({ error: 'Something went wrong!' });
-});
-
-app.get(/.*/, (req, res) => {
-  res.sendFile(path.join(__dirname, "frontend", "dist", "index.html"));
 });
 
 // Graceful shutdown
