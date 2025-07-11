@@ -54,6 +54,30 @@ const createGroupRules = [
   body('participants').isArray().isLength({ min: 1 })
 ];
 
+// Validation rules for creating a template
+const createTemplateRules = [
+  body('name').notEmpty().isLength({ min: 1, max: 100 }),
+  body('content').notEmpty().isLength({ max: 4096 }),
+  body('description').optional().isLength({ max: 500 }),
+  body('category').optional().isIn(['general', 'welcome', 'follow-up', 'promotional', 'support'])
+];
+
+// Validation rules for updating a template
+const updateTemplateRules = [
+  body('name').optional().isLength({ min: 1, max: 100 }),
+  body('content').optional().isLength({ max: 4096 }),
+  body('description').optional().isLength({ max: 500 }),
+  body('category').optional().isIn(['general', 'welcome', 'follow-up', 'promotional', 'support'])
+];
+
+// Validation rules for sending a template
+const sendTemplateRules = [
+  body('instanceId').notEmpty(),
+  body('to').notEmpty(),
+  body('templateId').notEmpty(),
+  body('variables').optional().isObject()
+];
+
 // Handle validation errors
 const handleValidation = (req, res, next) => {
   const errors = validationResult(req);
@@ -72,5 +96,8 @@ module.exports = {
   sendMediaUrlRules,
   sendGroupMessageRules,
   createGroupRules,
+  createTemplateRules,
+  updateTemplateRules,
+  sendTemplateRules,
   handleValidation
 }; 

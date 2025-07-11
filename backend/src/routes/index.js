@@ -10,8 +10,8 @@ const statsRoutes = require('./stats');
 const groupsRoutes = require('./groups');
 const scheduleRoutes = require('./schedule');
 const campaignsRoutes = require('./campaigns');
-// const templatesRoutes = require('./templates');
-// const reportsRoutes = require('./reports');
+const templatesRoutes = require('./templates');
+const reportsRoutes = require('./reports');
 
 // Import controllers for backward compatibility routes
 const { 
@@ -20,12 +20,14 @@ const {
   sendMediaUrl, 
   getChatInfo 
 } = require('../controllers/messagesController');
+const { sendTemplate } = require('../controllers/templatesController');
 const { verifyApiKey } = require('../middleware/auth');
 const { upload } = require('../config/multer');
 const { 
   sendMessageRules, 
   sendMediaRules, 
-  sendMediaUrlRules, 
+  sendMediaUrlRules,
+  sendTemplateRules,
   handleValidation 
 } = require('../middleware/validation');
 
@@ -58,6 +60,7 @@ router.get('/health', async (req, res) => {
 router.post('/send-message', verifyApiKey, sendMessageRules, handleValidation, sendMessage);
 router.post('/send-media', verifyApiKey, upload.single('media'), sendMediaRules, handleValidation, sendMedia);
 router.post('/send-media-url', verifyApiKey, sendMediaUrlRules, handleValidation, sendMediaUrl);
+router.post('/send-template', verifyApiKey, sendTemplateRules, handleValidation, sendTemplate);
 router.get('/chat-info', verifyApiKey, getChatInfo);
 
 // Mount route modules
@@ -69,7 +72,7 @@ router.use('/stats', statsRoutes);
 router.use('/groups', groupsRoutes);
 router.use('/schedule', scheduleRoutes);
 router.use('/campaigns', campaignsRoutes);
-// router.use('/templates', templatesRoutes);
-// router.use('/reports', reportsRoutes);
+router.use('/templates', templatesRoutes);
+router.use('/reports', reportsRoutes);
 
 module.exports = router; 

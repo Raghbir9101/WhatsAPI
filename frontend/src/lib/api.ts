@@ -238,8 +238,14 @@ class ApiClient {
     return this.request<{
       instanceId: string;
       instanceName: string;
-      qrCode: string;
-      timestamp: string;
+      qrCode?: string;
+      timestamp?: string;
+      status?: string;
+      isAuthenticated?: boolean;
+      phoneNumber?: string;
+      message?: string;
+      error?: string;
+      instructions?: string;
     }>(`/numbers/${instanceId}/qr`);
   }
 

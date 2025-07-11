@@ -46,7 +46,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Serve static files
-app.use(express.static(path.join(__dirname, "frontend", "dist")));
+app.use(express.static(path.join(__dirname, "../frontend", "dist")));
 app.use(express.static('public'));
 
 // Rate limiting
@@ -67,7 +67,7 @@ app.get('*', (req, res) => {
     return notFoundHandler(req, res);
   }
   
-  res.sendFile(path.join(__dirname, "frontend", "dist", "index.html"));
+  res.sendFile(path.join(__dirname, "../frontend", "dist", "index.html"));
 });
 
 // Error handling middleware - must be LAST
