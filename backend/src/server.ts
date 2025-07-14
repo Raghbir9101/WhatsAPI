@@ -13,7 +13,7 @@ import SchedulerService from './services/SchedulerService';
 import indiaMartScheduler from './services/IndiaMartScheduler';
 import { createRequiredDirectories } from './utils/helpers';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
-
+import { runSeed } from './utils/seed';
 // Import routes
 import apiRoutes from './routes';
 
@@ -34,7 +34,10 @@ app.locals.schedulerService = schedulerService;
 app.locals.indiaMartScheduler = indiaMartScheduler;
 
 // Connect to database
-connectDB().then(() => {
+connectDB().then(async () => {
+  // Run seed data
+  await runSeed();
+  
   // Start schedulers after database connection
   schedulerService.start();
   indiaMartScheduler.start();

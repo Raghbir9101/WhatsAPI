@@ -25,6 +25,7 @@ const SchedulerService_1 = __importDefault(require("./services/SchedulerService"
 const IndiaMartScheduler_1 = __importDefault(require("./services/IndiaMartScheduler"));
 const helpers_1 = require("./utils/helpers");
 const errorHandler_1 = require("./middleware/errorHandler");
+const seed_1 = require("./utils/seed");
 // Import routes
 const routes_1 = __importDefault(require("./routes"));
 const app = (0, express_1.default)();
@@ -40,11 +41,13 @@ app.locals.whatsappManager = whatsappManager;
 app.locals.schedulerService = schedulerService;
 app.locals.indiaMartScheduler = IndiaMartScheduler_1.default;
 // Connect to database
-(0, database_1.connectDB)().then(() => {
+(0, database_1.connectDB)().then(() => __awaiter(void 0, void 0, void 0, function* () {
+    // Run seed data
+    yield (0, seed_1.runSeed)();
     // Start schedulers after database connection
     schedulerService.start();
     IndiaMartScheduler_1.default.start();
-}).catch(err => {
+})).catch(err => {
     console.error('Database connection failed:', err);
     process.exit(1);
 });

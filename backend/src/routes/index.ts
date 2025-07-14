@@ -13,6 +13,7 @@ import campaignsRoutes from './campaigns';
 import templatesRoutes from './templates';
 import reportsRoutes from './reports';
 import indiamartRoutes from './indiamart';
+import adminRoutes from './admin';
 
 // Import controllers for backward compatibility routes
 import { 
@@ -77,5 +78,6 @@ router.use('/campaigns', campaignsRoutes);
 router.use('/templates', templatesRoutes);
 router.use('/reports', reportsRoutes);
 router.use('/indiamart', indiamartRoutes);
+router.use('/admin', adminRoutes);
 
 export default router; 

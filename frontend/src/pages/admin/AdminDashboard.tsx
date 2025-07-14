@@ -10,7 +10,9 @@ import {
   CreditCard,
   TrendingUp,
   Calendar,
-  Activity
+  Activity,
+  Smartphone,
+  Wifi
 } from 'lucide-react';
 import { formatNumber } from '@/lib/utils';
 
@@ -72,6 +74,22 @@ export function AdminDashboard() {
       trend: '+25% from last month'
     },
     {
+      title: 'WhatsApp Instances',
+      value: stats?.totalWhatsAppInstances || 0,
+      icon: Smartphone,
+      description: 'Total WhatsApp numbers',
+      trend: `${stats?.connectedWhatsAppInstances || 0} connected`
+    },
+    {
+      title: 'Connected Instances',
+      value: stats?.connectedWhatsAppInstances || 0,
+      icon: Wifi,
+      description: 'Currently connected & active',
+      trend: stats?.totalWhatsAppInstances ? 
+        `${Math.round(((stats?.connectedWhatsAppInstances || 0) / stats.totalWhatsAppInstances) * 100)}% connection rate` : 
+        '0% connection rate'
+    },
+    {
       title: 'Credits Issued',
       value: formatNumber(stats?.totalCreditsIssued || 0),
       icon: CreditCard,
@@ -125,7 +143,7 @@ export function AdminDashboard() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
         {statCards.map((stat) => (
           <Card key={stat.title}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

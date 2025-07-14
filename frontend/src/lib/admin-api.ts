@@ -1,4 +1,4 @@
-// Mock API for admin operations - replace with real API calls
+// Real API for admin operations
 
 export interface Client {
   id: string;
@@ -26,160 +26,130 @@ export interface Package {
   features: string[];
 }
 
-// Mock data
-const mockClients: Client[] = [
-  {
-    id: '1',
-    email: 'john@company.com',
-    name: 'John Doe',
-    company: 'Tech Corp',
-    package: 'PREMIUM',
-    validityDate: '2024-12-31',
-    creditsTotal: 10000,
-    creditsUsed: 3450,
-    creditsRemaining: 6550,
-    messagesSent: 3450,
-    status: 'ACTIVE',
-    createdAt: '2024-01-15',
-    lastLogin: '2024-07-08',
-    whatsappInstances: 3
-  },
-  {
-    id: '2',
-    email: 'sarah@business.com',
-    name: 'Sarah Wilson',
-    company: 'Business Solutions',
-    package: 'BASIC',
-    validityDate: '2024-08-15',
-    creditsTotal: 5000,
-    creditsUsed: 4800,
-    creditsRemaining: 200,
-    messagesSent: 4800,
-    status: 'ACTIVE',
-    createdAt: '2024-02-10',
-    lastLogin: '2024-07-09',
-    whatsappInstances: 1
-  },
-  {
-    id: '3',
-    email: 'mike@enterprise.com',
-    name: 'Mike Johnson',
-    company: 'Enterprise Inc',
-    package: 'ENTERPRISE',
-    validityDate: '2025-06-30',
-    creditsTotal: 50000,
-    creditsUsed: 12300,
-    creditsRemaining: 37700,
-    messagesSent: 12300,
-    status: 'ACTIVE',
-    createdAt: '2023-12-01',
-    lastLogin: '2024-07-09',
-    whatsappInstances: 10
-  },
-  {
-    id: '4',
-    email: 'expired@test.com',
-    name: 'Test User',
-    company: 'Test Company',
-    package: 'BASIC',
-    validityDate: '2024-06-30',
-    creditsTotal: 5000,
-    creditsUsed: 5000,
-    creditsRemaining: 0,
-    messagesSent: 5000,
-    status: 'EXPIRED',
-    createdAt: '2024-01-01',
-    lastLogin: '2024-06-29',
-    whatsappInstances: 2
-  }
-];
+// API base URL
+let API_BASE_URL = 'http://localhost:80/api';
 
-const mockPackages: Package[] = [
-  {
-    id: '1',
-    name: 'BASIC',
-    credits: 5000,
-    price: 99,
-    validityDays: 30,
-    features: ['5,000 messages', '1 WhatsApp number', 'Basic support']
-  },
-  {
-    id: '2',
-    name: 'PREMIUM',
-    credits: 15000,
-    price: 199,
-    validityDays: 30,
-    features: ['15,000 messages', '5 WhatsApp numbers', 'Priority support', 'Analytics']
-  },
-  {
-    id: '3',
-    name: 'ENTERPRISE',
-    credits: 50000,
-    price: 499,
-    validityDays: 30,
-    features: ['50,000 messages', 'Unlimited WhatsApp numbers', '24/7 support', 'Advanced analytics', 'API access']
+if(window.location.href.includes('localhost')) {
+  API_BASE_URL = 'http://localhost:80/api';
+} else {
+  API_BASE_URL = '/api';
+}
+// Get token from localStorage
+const getToken = () => localStorage.getItem('admin-token');
+
+// API request helper
+const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
+  const token = getToken();
+  
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+      ...options.headers,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`API request failed: ${response.statusText}`);
   }
-];
+
+  return response.json();
+};
 
 export const adminApi = {
+  // Authentication
+  login: async (email: string, password: string) => {
+    const response = await apiRequest('/admin/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+    
+    if (response.token) {
+      localStorage.setItem('admin-token', response.token);
+    }
+    
+    return response;
+  },
+
+  logout: () => {
+    localStorage.removeItem('admin-token');
+  },
+
   // Client management
   getClients: async (): Promise<Client[]> => {
-    await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API delay
-    return mockClients;
+    const response = await apiRequest('/admin/clients');
+    return response.clients || [];
   },
 
   getClient: async (id: string): Promise<Client | null> => {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    return mockClients.find(c => c.id === id) || null;
+    try {
+      return await apiRequest(`/admin/clients/${id}`);
+    } catch (error) {
+      return null;
+    }
   },
 
   updateClientStatus: async (id: string, status: 'ACTIVE' | 'EXPIRED' | 'SUSPENDED'): Promise<void> => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const client = mockClients.find(c => c.id === id);
-    if (client) {
-      client.status = status;
-    }
+    await apiRequest(`/admin/clients/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
   },
 
   extendClientValidity: async (id: string, days: number): Promise<void> => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const client = mockClients.find(c => c.id === id);
-    if (client) {
-      const currentDate = new Date(client.validityDate);
-      currentDate.setDate(currentDate.getDate() + days);
-      client.validityDate = currentDate.toISOString().split('T')[0];
-    }
+    await apiRequest(`/admin/clients/${id}/extend`, {
+      method: 'PUT',
+      body: JSON.stringify({ days }),
+    });
   },
 
   addCredits: async (id: string, credits: number): Promise<void> => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const client = mockClients.find(c => c.id === id);
-    if (client) {
-      client.creditsTotal += credits;
-      client.creditsRemaining += credits;
-    }
+    await apiRequest(`/admin/clients/${id}/credits`, {
+      method: 'PUT',
+      body: JSON.stringify({ credits }),
+    });
   },
 
   // Package management
   getPackages: async (): Promise<Package[]> => {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    return mockPackages;
+    return await apiRequest('/admin/packages');
+  },
+
+  createPackage: async (packageData: Omit<Package, 'id'>): Promise<Package> => {
+    return await apiRequest('/admin/packages', {
+      method: 'POST',
+      body: JSON.stringify(packageData),
+    });
+  },
+
+  updatePackage: async (id: string, packageData: Omit<Package, 'id'>): Promise<Package> => {
+    return await apiRequest(`/admin/packages/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(packageData),
+    });
+  },
+
+  deletePackage: async (id: string): Promise<void> => {
+    await apiRequest(`/admin/packages/${id}`, {
+      method: 'DELETE',
+    });
   },
 
   // Statistics
   getAdminStats: async () => {
-    await new Promise(resolve => setTimeout(resolve, 400));
-    return {
-      totalClients: mockClients.length,
-      activeClients: mockClients.filter(c => c.status === 'ACTIVE').length,
-      expiredClients: mockClients.filter(c => c.status === 'EXPIRED').length,
-      suspendedClients: mockClients.filter(c => c.status === 'SUSPENDED').length,
-      totalCreditsIssued: mockClients.reduce((sum, c) => sum + c.creditsTotal, 0),
-      totalCreditsUsed: mockClients.reduce((sum, c) => sum + c.creditsUsed, 0),
-      totalMessagesSent: mockClients.reduce((sum, c) => sum + c.messagesSent, 0),
-      totalRevenue: mockClients.length * 199, // Mock calculation
-      monthlyRevenue: 15920,
-      newClientsThisMonth: 8
-    };
-  }
+    return await apiRequest('/admin/stats');
+  },
+
+  // System settings
+  getSystemSettings: async () => {
+    return await apiRequest('/admin/settings');
+  },
+
+  updateSystemSettings: async (settings: any) => {
+    return await apiRequest('/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    });
+  },
 };

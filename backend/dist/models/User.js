@@ -40,10 +40,50 @@ const userSchema = new mongoose_1.default.Schema({
         type: Boolean,
         default: true
     },
+    // Admin fields
+    role: {
+        type: String,
+        enum: ['USER', 'ADMIN'],
+        default: 'USER'
+    },
+    packageType: {
+        type: String,
+        enum: ['BASIC', 'PREMIUM', 'ENTERPRISE'],
+        default: 'BASIC'
+    },
+    creditsTotal: {
+        type: Number,
+        default: 5000
+    },
+    creditsUsed: {
+        type: Number,
+        default: 0
+    },
+    validityDate: {
+        type: Date,
+        default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
+    },
+    status: {
+        type: String,
+        enum: ['ACTIVE', 'EXPIRED', 'SUSPENDED'],
+        default: 'ACTIVE'
+    },
+    lastLogin: {
+        type: Date,
+        default: Date.now
+    },
     createdAt: {
         type: Date,
         default: Date.now
     }
 });
+// Virtual field for remaining credits
+userSchema.virtual('creditsRemaining').get(function () {
+    return this.creditsTotal - this.creditsUsed;
+});
+// Method to check if user is admin
+userSchema.methods.isAdmin = function () {
+    return this.role === 'ADMIN';
+};
 const User = mongoose_1.default.model('User', userSchema);
 exports.default = User;
