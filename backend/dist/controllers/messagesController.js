@@ -12,11 +12,129 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getConversations = exports.getMessages = exports.getChatInfo = exports.sendMediaUrl = exports.sendMedia = exports.sendMessage = void 0;
+exports.getConversations = exports.getMessages = exports.getChatInfo = exports.sendMediaUrl = exports.sendMedia = exports.sendMessage = exports.sendMessageUnified = void 0;
 const whatsapp_web_js_1 = require("whatsapp-web.js");
 const fs_1 = __importDefault(require("fs"));
 const models_1 = require("../models");
 const helpers_1 = require("../utils/helpers");
+const sendMessageUnified = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c;
+    const { instanceId, to, message, mediaUrl, caption = '' } = req.body;
+    const user = req.user;
+    const { whatsappManager } = req.app.locals;
+    // Check monthly limit
+    if (user.messagesSent >= user.monthlyLimit) {
+        return res.status(429).json({ error: 'Monthly message limit exceeded' });
+    }
+    try {
+        // Find WhatsApp instance
+        const instance = yield models_1.WhatsAppInstance.findOne({
+            instanceId,
+            userId: user._id
+        });
+        if (!instance) {
+            return res.status(404).json({ error: 'WhatsApp number instance not found' });
+        }
+        // Get WhatsApp client
+        const client = whatsappManager.getClient(user._id, instanceId);
+        if (!client) {
+            return res.status(400).json({ error: 'WhatsApp client not initialized' });
+        }
+        // Check client status
+        const clientStatus = whatsappManager.getClientStatus(user._id, instanceId);
+        if (clientStatus !== 'ready') {
+            return res.status(400).json({ error: `WhatsApp client not ready. Status: ${clientStatus}` });
+        }
+        const chatId = (0, helpers_1.formatPhoneNumber)(to);
+        let sentMessage;
+        let messageType = 'text';
+        let messageContent = {};
+        let responseData = {};
+        // Determine message type and send accordingly
+        if (req.file) {
+            // File upload - send media from file
+            const media = whatsapp_web_js_1.MessageMedia.fromFilePath(req.file.path);
+            sentMessage = yield client.sendMessage(chatId, media, { caption });
+            messageType = req.file.mimetype.startsWith('image/') ? 'image' :
+                req.file.mimetype.startsWith('video/') ? 'video' :
+                    req.file.mimetype.startsWith('audio/') ? 'audio' : 'document';
+            messageContent = {
+                caption: caption,
+                fileName: req.file.originalname,
+                mimeType: req.file.mimetype,
+                fileSize: req.file.size
+            };
+            responseData = {
+                mediaType: req.file.mimetype,
+                caption: caption,
+                fileName: req.file.originalname
+            };
+        }
+        else if (mediaUrl) {
+            // Media URL - send media from URL
+            const media = yield whatsapp_web_js_1.MessageMedia.fromUrl(mediaUrl, { unsafeMime: true });
+            sentMessage = yield client.sendMessage(chatId, media, { caption });
+            messageType = ((_a = media.mimetype) === null || _a === void 0 ? void 0 : _a.startsWith('image/')) ? 'image' :
+                ((_b = media.mimetype) === null || _b === void 0 ? void 0 : _b.startsWith('video/')) ? 'video' :
+                    ((_c = media.mimetype) === null || _c === void 0 ? void 0 : _c.startsWith('audio/')) ? 'audio' : 'document';
+            messageContent = {
+                caption: caption,
+                mediaUrl: mediaUrl,
+                mimeType: media.mimetype
+            };
+            responseData = {
+                mediaUrl: mediaUrl,
+                caption: caption,
+                mimeType: media.mimetype
+            };
+        }
+        else if (message) {
+            // Text message
+            sentMessage = yield client.sendMessage(chatId, message);
+            messageType = 'text';
+            messageContent = { text: message };
+            responseData = { message: message };
+        }
+        else {
+            return res.status(400).json({
+                error: 'No message content provided. Please provide either message text, file upload, or mediaUrl.'
+            });
+        }
+        // Store message in database
+        const messageRecord = new models_1.Message({
+            messageId: sentMessage.id._serialized,
+            instanceId: instanceId,
+            userId: user._id,
+            direction: 'outgoing',
+            from: instance.phoneNumber || instanceId,
+            to: to,
+            type: messageType,
+            content: messageContent,
+            status: 'sent',
+            timestamp: new Date()
+        });
+        // Update message counts and store message record
+        yield Promise.all([
+            models_1.User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
+            models_1.WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } }),
+            messageRecord.save()
+        ]);
+        // Send success response
+        res.json(Object.assign({ success: true, messageId: sentMessage.id._serialized, instanceId: instanceId, instanceName: instance.instanceName, from: instance.phoneNumber, to: to, type: messageType, timestamp: new Date().toISOString() }, responseData));
+    }
+    catch (error) {
+        // Clean up uploaded file on error
+        if (req.file && fs_1.default.existsSync(req.file.path)) {
+            fs_1.default.unlinkSync(req.file.path);
+        }
+        console.error('Send message error:', error);
+        res.status(500).json({
+            error: 'Failed to send message',
+            details: error.message
+        });
+    }
+});
+exports.sendMessageUnified = sendMessageUnified;
 // Send text message
 const sendMessage = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { instanceId, to, message } = req.body;
@@ -381,10 +499,12 @@ const getConversations = (req, res) => __awaiter(void 0, void 0, void 0, functio
                     unreadCount: {
                         $sum: {
                             $cond: [
-                                { $and: [
+                                {
+                                    $and: [
                                         { $eq: ['$direction', 'incoming'] },
                                         { $ne: ['$status', 'read'] }
-                                    ] },
+                                    ]
+                                },
                                 1,
                                 0
                             ]
