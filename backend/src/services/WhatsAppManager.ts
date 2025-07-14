@@ -18,7 +18,7 @@ class WhatsAppManager {
 
   async createClient(userId, instanceId, instanceName) {
     const clientId = `${userId}_${instanceId}`;
-    
+
     if (this.clients.has(clientId)) {
       const existingClient = this.clients.get(clientId);
       if (existingClient.pupPage && !existingClient.pupPage.isClosed()) {
@@ -28,7 +28,7 @@ class WhatsAppManager {
 
     // Production-ready client configuration
     const isProduction = process.env.NODE_ENV === 'production';
-    
+
     const clientConfig = {
       authStrategy: new LocalAuth({
         clientId: clientId,
@@ -36,33 +36,38 @@ class WhatsAppManager {
       })
     } as any;
 
-    // Add Puppeteer config for production
-    if (isProduction) {
-      const possibleChromePaths = [
-        process.env.CHROME_BIN,
-        '/usr/bin/google-chrome-stable',
-        '/usr/bin/google-chrome',
-        '/usr/bin/chromium-browser',
-        '/usr/bin/chromium',
-        '/snap/bin/chromium'
-      ];
-      
-      let chromePath = null;
-      for (const path of possibleChromePaths) {
-        if (path && fs.existsSync(path)) {
-          chromePath = path;
-          console.log(`Found Chrome at: ${chromePath}`);
-          break;
-        }
-      }
-      
-      if (!chromePath) {
-        console.error('Chrome/Chromium not found! Please install Chrome or set CHROME_BIN environment variable.');
-      }
+    // Add Puppeteer config only in production
+    // if (isProduction) {
+    // Try to find Chrome executable
+    const possibleChromePaths = [
+      process.env.CHROME_BIN,
+      '/usr/bin/google-chrome-stable',
+      '/usr/bin/google-chrome',
+      '/usr/bin/chromium-browser',
+      '/usr/bin/chromium',
+      '/snap/bin/chromium'
+    ];
 
-      const userDataDir = `/tmp/chrome-${clientId}-${Date.now()}`;
-      const puppeteerArgs = [
-        '--no-sandbox', // CRITICAL: Must be first for root environments
+    let chromePath = null;
+    for (const path of possibleChromePaths) {
+      if (path && require('fs').existsSync(path)) {
+        chromePath = path;
+        console.log(`Found Chrome at: ${chromePath}`);
+        break;
+      }
+    }
+
+    if (!chromePath) {
+      console.error('Chrome/Chromium not found! Please install Chrome or set CHROME_BIN environment variable.');
+    }
+
+    // Create unique user data directory for this client
+    const userDataDir = `/tmp/chrome-${clientId}-${Date.now()}`;
+
+    clientConfig.puppeteer = {
+      headless: true,
+      args: [
+        '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-accelerated-2d-canvas',
@@ -84,71 +89,17 @@ class WhatsAppManager {
         '--no-default-browser-check',
         '--no-pings',
         '--window-size=1366,768',
-        '--disable-blink-features=AutomationControlled',
-        '--disable-features=VizDisplayCompositor',
-        '--disable-ipc-flooding-protection',
-        '--disable-renderer-backgrounding',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-background-timer-throttling',
-        '--force-fieldtrials=*BackgroundTracing/default/',
-        '--disable-hang-monitor',
-        '--disable-client-side-phishing-detection',
-        '--disable-popup-blocking',
-        '--disable-prompt-on-repost',
-        '--disable-sync',
-        '--disable-translate',
-        '--disable-web-resources',
-        '--disable-plugins',
-        '--disable-features=TranslateUI,BlinkGenPropertyTrees',
-        '--disable-component-extensions-with-background-pages',
-        '--disable-default-apps',
-        '--disable-breakpad',
-        '--disable-features=VizDisplayCompositor',
-        '--disable-features=AudioServiceOutOfProcess',
-        '--disable-features=VizServiceDisplayCompositor',
-        '--single-process', // Use single process mode for better stability
         `--user-data-dir=${userDataDir}`,
         `--data-path=${userDataDir}`,
         `--disk-cache-dir=${userDataDir}/cache`,
-        '--remote-debugging-port=0'
-      ];
-      clientConfig.puppeteer = {
-        headless: true,
-        // args: [
-        //   '--no-sandbox',
-        //   '--disable-setuid-sandbox',
-        //   '--disable-dev-shm-usage',
-        //   '--disable-accelerated-2d-canvas',
-        //   '--no-first-run',
-        //   '--no-zygote',
-        //   '--disable-gpu',
-        //   '--disable-extensions',
-        //   '--disable-background-timer-throttling',
-        //   '--disable-backgrounding-occluded-windows',
-        //   '--disable-renderer-backgrounding',
-        //   '--disable-features=TranslateUI',
-        //   '--disable-web-security',
-        //   '--disable-features=VizDisplayCompositor',
-        //   '--disable-crash-reporter',
-        //   '--disable-in-process-stack-traces',
-        //   '--disable-logging',
-        //   '--disable-default-apps',
-        //   '--mute-audio',
-        //   '--no-default-browser-check',
-        //   '--no-pings',
-        //   '--window-size=1366,768',
-        //   `--user-data-dir=${userDataDir}`,
-        //   `--data-path=${userDataDir}`,
-        //   `--disk-cache-dir=${userDataDir}/cache`,
-        //   '--remote-debugging-port=0'
-        // ],
-        args: puppeteerArgs,
-        executablePath: chromePath,
-        timeout: 120000,
-        ignoreDefaultArgs: ['--disable-extensions'],
-        ignoreHTTPSErrors: true
-      };
-    }
+        '--remote-debugging-port=0' // Use random available port
+      ],
+      executablePath: chromePath,
+      timeout: 120000, // Increased timeout
+      ignoreDefaultArgs: ['--disable-extensions'],
+      ignoreHTTPSErrors: true
+    };
+    // }
 
     const client = new Client(clientConfig);
 
@@ -158,29 +109,36 @@ class WhatsAppManager {
 
     try {
       console.log(`[WhatsAppManager] Initializing client for clientId: ${clientId}`);
-      
+      console.log(`[WhatsAppManager] Chrome path: ${chromePath}`);
+      console.log(`[WhatsAppManager] Is Production: ${isProduction}`);
+      console.log(`[WhatsAppManager] Starting client.initialize() call...`);
+
+      // Add timeout for initialization
       const initPromise = client.initialize();
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(new Error('Client initialization timeout after 2 minutes')), 120000);
       });
-      
+
       await Promise.race([initPromise, timeoutPromise]);
       console.log(`[WhatsAppManager] Client ${clientId} initialized successfully.`);
       return client;
     } catch (error) {
       console.error(`[WhatsAppManager] FAILED to initialize client ${clientId}:`, error);
+      console.error(`[WhatsAppManager] Error stack:`, error.stack);
       this.clients.delete(clientId);
       this.clientStatus.delete(clientId);
-      
+
+      // Try to destroy the client if it exists
       try {
         await client.destroy();
       } catch (destroyError) {
         console.error(`[WhatsAppManager] Error destroying failed client:`, destroyError);
       }
-      
+
       throw error;
     }
   }
+
 
   async setupClientEvents(client, clientId, instanceId, instanceName) {
     console.log(`[WhatsAppManager] Setting up event listeners for clientId: ${clientId}`);
@@ -204,7 +162,7 @@ class WhatsAppManager {
     client.on('ready', async () => {
       console.log(`[WhatsAppManager] Client ${clientId} (${instanceName}) is ready!`);
       this.clientStatus.set(clientId, 'ready');
-      
+
       try {
         const info = client.info;
         if (info && info.wid) {
@@ -233,7 +191,7 @@ class WhatsAppManager {
     client.on('disconnected', async (reason) => {
       console.log(`[WhatsAppManager] Client ${clientId} (${instanceName}) disconnected. Reason:`, reason);
       this.clientStatus.set(clientId, 'disconnected');
-      
+
       try {
         await WhatsAppInstance.findOneAndUpdate(
           { instanceId },
@@ -266,7 +224,7 @@ class WhatsAppManager {
 
   async handleIncomingMessage(message, instanceId, instanceName) {
     console.log(`Message received on ${instanceName}:`, message.body);
-    
+
     try {
       const instance = await WhatsAppInstance.findOne({ instanceId });
       if (!instance) {
@@ -274,11 +232,11 @@ class WhatsAppManager {
         return;
       }
 
-      const messageType = message.hasMedia ? 
-        (message.type === 'image' ? 'image' : 
-         message.type === 'video' ? 'video' : 
-         message.type === 'audio' ? 'audio' : 
-         message.type === 'document' ? 'document' : 'text') : 'text';
+      const messageType = message.hasMedia ?
+        (message.type === 'image' ? 'image' :
+          message.type === 'video' ? 'video' :
+            message.type === 'audio' ? 'audio' :
+              message.type === 'document' ? 'document' : 'text') : 'text';
 
       let content = { text: message.body || '' } as any;
 
@@ -336,9 +294,9 @@ class WhatsAppManager {
   async destroyClient(userId, instanceId) {
     const clientId = `${userId}_${instanceId}`;
     const client = this.clients.get(clientId);
-    
+
     console.log(`[WhatsAppManager] Destroying client: ${clientId}`);
-    
+
     if (client) {
       try {
         await client.destroy();
@@ -347,7 +305,7 @@ class WhatsAppManager {
         console.error(`Error destroying client ${clientId}:`, error);
       }
     }
-    
+
     // Clean up user data directory
     const userDataPattern = `/tmp/chrome-${clientId}-*`;
     try {
@@ -357,7 +315,7 @@ class WhatsAppManager {
     } catch (cleanupError) {
       console.error(`Error cleaning up user data for ${clientId}:`, cleanupError);
     }
-    
+
     // Clean up WhatsApp session files
     try {
       const sessionPath = path.join(os.tmpdir(), 'whatsapp-api-sessions', `session-${clientId}`);
@@ -368,19 +326,19 @@ class WhatsAppManager {
     } catch (sessionError) {
       console.error(`Error cleaning up session files for ${clientId}:`, sessionError);
     }
-    
+
     // Clear from maps
     this.clients.delete(clientId);
     this.clientStatus.delete(clientId);
     this.qrCodes.delete(instanceId);
-    
+
     console.log(`[WhatsAppManager] Client ${clientId} cleanup completed`);
   }
 
   // Graceful shutdown
   async shutdown() {
     console.log('Shutting down WhatsApp Manager...');
-    
+
     for (const [clientId, client] of this.clients) {
       try {
         await client.destroy();
