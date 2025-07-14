@@ -61,7 +61,7 @@ export function DeviceCard({ device }: DeviceCardProps) {
     onSuccess: () => {
       setIsInitializing(true);
       queryClient.invalidateQueries({ queryKey: ['numbers'] });
-      
+
       // Wait a moment for initialization, then check for QR
       setTimeout(() => {
         checkQRAvailability();
@@ -190,6 +190,10 @@ export function DeviceCard({ device }: DeviceCardProps) {
               <Badge variant="outline">{device.phoneNumber}</Badge>
             </div>
           )}
+
+          <div className="flex items-center gap-2">
+            <Badge variant="outline">{device.instanceId}</Badge>
+          </div>
 
           <div className="flex justify-between gap-2 text-sm text-muted-foreground">
             <div><span className="font-bold">Created:</span> {new Date(device.createdAt).toLocaleDateString()}</div>

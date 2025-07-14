@@ -6,7 +6,8 @@ import {
   sendMediaUrl, 
   getChatInfo, 
   getMessages, 
-  getConversations 
+  getConversations, 
+  sendMessageUnified
 } from '../controllers/messagesController';
 import { getMessageStats } from '../controllers/statsController';
 import { verifyApiKey } from '../middleware/auth';
@@ -26,6 +27,9 @@ router.get('/conversations', verifyApiKey, getConversations);
 
 // Get message statistics (backward compatibility)
 router.get('/stats', verifyApiKey, getMessageStats);
+
+// Send text message
+router.post('/send-message-unified', verifyApiKey, sendMessageRules, handleValidation, sendMessageUnified);
 
 // Send text message
 router.post('/send-message', verifyApiKey, sendMessageRules, handleValidation, sendMessage);
