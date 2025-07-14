@@ -12,6 +12,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  Building2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useUiStore } from '@/store/ui-store';
@@ -25,6 +26,7 @@ const navigation = [
   { name: 'Groups', href: '/groups', icon: Users },
   { name: 'Schedule', href: '/schedule', icon: Calendar },
   { name: 'Reports', href: '/reports', icon: BarChart3 },
+  { name: 'IndiaMART', href: '/indiamart', icon: Building2 },
   { name: 'Payment', href: '/payment', icon: CreditCard },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
