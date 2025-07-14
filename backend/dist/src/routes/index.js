@@ -1,0 +1,99 @@
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const router = express_1.default.Router();
+// Import route modules
+const auth_1 = __importDefault(require("./auth"));
+const numbers_1 = __importDefault(require("./numbers"));
+const messages_1 = __importDefault(require("./messages"));
+const conversations_1 = __importDefault(require("./conversations"));
+const stats_1 = __importDefault(require("./stats"));
+const groups_1 = __importDefault(require("./groups"));
+const schedule_1 = __importDefault(require("./schedule"));
+const campaigns_1 = __importDefault(require("./campaigns"));
+const templates_1 = __importDefault(require("./templates"));
+const reports_1 = __importDefault(require("./reports"));
+// Import controllers for backward compatibility routes
+const messagesController_1 = require("../controllers/messagesController");
+const templatesController_1 = require("../controllers/templatesController");
+const auth_2 = require("../middleware/auth");
+const multer_1 = require("../config/multer");
+const validation_1 = require("../middleware/validation");
+// Health check
+router.get('/health', async (_req, res) => {
+    try {
+        const { User, WhatsAppInstance } = await Promise.resolve().then(() => __importStar(require('../models')));
+        const [totalUsers, totalNumbers] = await Promise.all([
+            User.countDocuments(),
+            WhatsAppInstance.countDocuments()
+        ]);
+        res.json({
+            status: 'OK',
+            timestamp: new Date().toISOString(),
+            totalUsers,
+            totalNumbers
+        });
+    }
+    catch (error) {
+        console.error('Health check error:', error);
+        res.status(500).json({
+            status: 'ERROR',
+            timestamp: new Date().toISOString(),
+            error: 'Database connection failed'
+        });
+    }
+});
+// Backward compatibility routes - direct messaging endpoints
+router.post('/send-message', auth_2.verifyApiKey, validation_1.sendMessageRules, validation_1.handleValidation, messagesController_1.sendMessage);
+router.post('/send-media', auth_2.verifyApiKey, multer_1.upload.single('media'), validation_1.sendMediaRules, validation_1.handleValidation, messagesController_1.sendMedia);
+router.post('/send-media-url', auth_2.verifyApiKey, validation_1.sendMediaUrlRules, validation_1.handleValidation, messagesController_1.sendMediaUrl);
+router.post('/send-template', auth_2.verifyApiKey, validation_1.sendTemplateRules, validation_1.handleValidation, templatesController_1.sendTemplate);
+router.get('/chat-info', auth_2.verifyApiKey, messagesController_1.getChatInfo);
+// Mount route modules
+router.use('/', auth_1.default);
+router.use('/numbers', numbers_1.default);
+router.use('/messages', messages_1.default);
+router.use('/conversations', conversations_1.default);
+router.use('/stats', stats_1.default);
+router.use('/groups', groups_1.default);
+router.use('/schedule', schedule_1.default);
+router.use('/campaigns', campaigns_1.default);
+router.use('/templates', templates_1.default);
+router.use('/reports', reports_1.default);
+exports.default = router;

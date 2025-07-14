@@ -32,6 +32,18 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: 5000
   },
+  deviceLimit: {
+    type: Number,
+    default: 1
+  },
+  role: {
+    type: String,
+    default: 'user'
+  },
+  accountType: {
+    type: String,
+    default: 'demo',
+  },
   isActive: {
     type: Boolean,
     default: true
