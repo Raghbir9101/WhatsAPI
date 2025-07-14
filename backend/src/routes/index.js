@@ -12,6 +12,7 @@ const scheduleRoutes = require('./schedule');
 const campaignsRoutes = require('./campaigns');
 const templatesRoutes = require('./templates');
 const reportsRoutes = require('./reports');
+const indiamartRoutes = require('./indiamart');
 
 // Import controllers for backward compatibility routes
 const { 
@@ -74,5 +75,6 @@ router.use('/schedule', scheduleRoutes);
 router.use('/campaigns', campaignsRoutes);
 router.use('/templates', templatesRoutes);
 router.use('/reports', reportsRoutes);
+router.use('/indiamart', indiamartRoutes);
 
 module.exports = router; 

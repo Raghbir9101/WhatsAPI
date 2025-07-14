@@ -1,7 +1,7 @@
-let API_BASE_URL = 'http://localhost/api';
+let API_BASE_URL = 'http://localhost:80/api';
 
 if(window.location.href.includes('localhost')) {
-  API_BASE_URL = 'http://localhost/api';
+  API_BASE_URL = 'http://localhost:80/api';
 } else {
   API_BASE_URL = '/api';
 }
@@ -148,19 +148,48 @@ class ApiClient {
       headers['x-api-key'] = this.apiKey;
     }
 
-    const response = await fetch(url, {
-      ...options,
-      headers,
+    console.log('🌐 [API CLIENT] Making request:', {
+      url,
+      method: options.method || 'GET',
+      headers: Object.keys(headers),
+      hasApiKey: !!this.apiKey
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({
-        error: `HTTP ${response.status}: ${response.statusText}`,
-      }));
-      throw new Error(errorData.error || errorData.message || 'API request failed');
-    }
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers,
+      });
 
-    return response.json();
+      console.log('📡 [API CLIENT] Response received:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: Object.fromEntries(response.headers.entries())
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({
+          error: `HTTP ${response.status}: ${response.statusText}`,
+        }));
+        console.error('❌ [API CLIENT] Request failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorData
+        });
+        throw new Error(errorData.error || errorData.message || 'API request failed');
+      }
+
+      const data = await response.json();
+      console.log('✅ [API CLIENT] Request successful:', {
+        dataType: typeof data,
+        dataKeys: Object.keys(data || {})
+      });
+      return data;
+    } catch (error) {
+      console.error('❌ [API CLIENT] Request error:', error);
+      throw error;
+    }
   }
 
   // Auth endpoints
@@ -823,6 +852,180 @@ class ApiClient {
         status: string;
       }[];
     }>(`/reports/performance?${searchParams}`);
+  }
+
+  // IndiaMART Integration
+  async getIndiaMartConfig() {
+    return this.request<{
+      configured: boolean;
+      config?: {
+        _id: string;
+        crmKey: string;
+        isActive: boolean;
+        fetchInterval: number;
+        overlapDuration: number;
+        lastFetchTime: string;
+        nextFetchTime: string;
+        totalLeadsFetched: number;
+        totalApiCalls: number;
+        lastApiCallStatus: string;
+        lastApiCallError: string;
+        settings: {
+          autoFetch: boolean;
+          retryFailedCalls: boolean;
+          maxRetries: number;
+          notifications: boolean;
+        };
+      };
+    }>('/indiamart/config');
+  }
+
+  async saveIndiaMartConfig(config: {
+    crmKey: string;
+    fetchInterval: number;
+    overlapDuration: number;
+    settings: {
+      autoFetch: boolean;
+      retryFailedCalls: boolean;
+      maxRetries: number;
+      notifications: boolean;
+    };
+  }) {
+    return this.request<{
+      message: string;
+      config: any;
+    }>('/indiamart/config', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    });
+  }
+
+  async getIndiaMartDashboard() {
+    return this.request<{
+      configured: boolean;
+      statistics: {
+        totalLeads: number;
+        todayLeads: number;
+        weekLeads: number;
+        monthLeads: number;
+        statusCounts: Record<string, number>;
+      };
+      fetchInfo: {
+        lastFetch: string;
+        nextFetch: string;
+        timeUntilNextFetch: number;
+        totalApiCalls: number;
+        lastApiCallStatus: string;
+        lastApiCallError: string;
+      };
+      recentActivity: any[];
+    }>('/indiamart/dashboard');
+  }
+
+  async getIndiaMartLeads(params: {
+    page?: number;
+    limit?: number;
+    status?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    senderName?: string;
+    senderMobile?: string;
+    queryType?: string;
+    sortBy?: string;
+    sortOrder?: string;
+  } = {}) {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') {
+        queryParams.append(key, value.toString());
+      }
+    });
+
+    return this.request<{
+      leads: any[];
+      pagination: {
+        page: number;
+        limit: number;
+        totalPages: number;
+        totalCount: number;
+        hasNext: boolean;
+        hasPrev: boolean;
+      };
+    }>(`/indiamart/leads?${queryParams.toString()}`);
+  }
+
+  async fetchIndiaMartLeads() {
+    console.log('🌐 [API CLIENT] fetchIndiaMartLeads called');
+    console.log('🌐 [API CLIENT] Making POST request to /indiamart/leads/fetch');
+    console.log('🌐 [API CLIENT] API Base URL:', API_BASE_URL);
+    console.log('🌐 [API CLIENT] Full URL:', `${API_BASE_URL}/indiamart/leads/fetch`);
+    console.log('🌐 [API CLIENT] API Key present:', !!this.apiKey);
+    
+    try {
+      const response = await this.request<{
+        message: string;
+        totalRecords: number;
+        processedCount: number;
+        skippedCount: number;
+        errorCount: number;
+        duration: number;
+      }>('/indiamart/leads/fetch', {
+        method: 'POST',
+      });
+      
+      console.log('✅ [API CLIENT] fetchIndiaMartLeads successful:', response);
+      return response;
+    } catch (error) {
+      console.error('❌ [API CLIENT] fetchIndiaMartLeads failed:', error);
+      console.error('❌ [API CLIENT] Error details:', {
+        message: error.message,
+        name: error.name,
+        stack: error.stack
+      });
+      throw error;
+    }
+  }
+
+  async updateIndiaMartLeadStatus(leadId: string, data: {
+    status: string;
+    notes: string;
+    followUpDate: string;
+  }) {
+    return this.request<{
+      message: string;
+      lead: any;
+    }>(`/indiamart/leads/${leadId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getIndiaMartLogs(params: {
+    page?: number;
+    limit?: number;
+    action?: string;
+    status?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  } = {}) {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') {
+        queryParams.append(key, value.toString());
+      }
+    });
+
+    return this.request<{
+      logs: any[];
+      pagination: {
+        page: number;
+        limit: number;
+        totalPages: number;
+        totalCount: number;
+        hasNext: boolean;
+        hasPrev: boolean;
+      };
+    }>(`/indiamart/logs?${queryParams.toString()}`);
   }
 }
 

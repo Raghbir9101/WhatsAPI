@@ -9,6 +9,7 @@ require('dotenv').config();
 const { connectDB } = require('./src/config/database');
 const WhatsAppManager = require('./src/services/WhatsAppManager');
 const SchedulerService = require('./src/services/SchedulerService');
+const indiaMartScheduler = require('./src/services/IndiaMartScheduler');
 const { createRequiredDirectories } = require('./src/utils/helpers');
 const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
 
@@ -29,11 +30,13 @@ const schedulerService = new SchedulerService(whatsappManager);
 // Store services in app.locals for access in controllers
 app.locals.whatsappManager = whatsappManager;
 app.locals.schedulerService = schedulerService;
+app.locals.indiaMartScheduler = indiaMartScheduler;
 
 // Connect to database
 connectDB().then(() => {
-  // Start scheduler after database connection
+  // Start schedulers after database connection
   schedulerService.start();
+  indiaMartScheduler.start();
 }).catch(err => {
   console.error('Database connection failed:', err);
   process.exit(1);
@@ -79,6 +82,7 @@ process.on('SIGINT', async () => {
   
   try {
     await whatsappManager.shutdown();
+    indiaMartScheduler.stop();
     process.exit(0);
   } catch (error) {
     console.error('Error during shutdown:', error);
@@ -94,6 +98,7 @@ app.listen(PORT, () => {
   console.log('   ✅ Multiple WhatsApp numbers per user');
   console.log('   ✅ QR code scanning for each number');
   console.log('   ✅ Complete WhatsApp messaging API');
+  console.log('   ✅ IndiaMART leads integration');
   console.log('   ✅ Organized MVC structure');
   console.log('   ✅ Modular architecture');
 });
