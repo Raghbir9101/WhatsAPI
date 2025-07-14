@@ -1,0 +1,420 @@
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getConversations = exports.getMessages = exports.getChatInfo = exports.sendMediaUrl = exports.sendMedia = exports.sendMessage = void 0;
+const whatsapp_web_js_1 = require("whatsapp-web.js");
+const fs_1 = __importDefault(require("fs"));
+const models_1 = require("../models");
+const helpers_1 = require("../utils/helpers");
+// Send text message
+const sendMessage = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const { instanceId, to, message } = req.body;
+    const user = req.user;
+    const { whatsappManager } = req.app.locals;
+    if (user.messagesSent >= user.monthlyLimit) {
+        return res.status(429).json({ error: 'Monthly message limit exceeded' });
+    }
+    try {
+        const instance = yield models_1.WhatsAppInstance.findOne({
+            instanceId,
+            userId: user._id
+        });
+        if (!instance) {
+            return res.status(404).json({ error: 'WhatsApp number instance not found' });
+        }
+        const client = whatsappManager.getClient(user._id, instanceId);
+        if (!client) {
+            return res.status(400).json({ error: 'WhatsApp client not initialized' });
+        }
+        const clientStatus = whatsappManager.getClientStatus(user._id, instanceId);
+        if (clientStatus !== 'ready') {
+            return res.status(400).json({ error: `WhatsApp client not ready. Status: ${clientStatus}` });
+        }
+        const chatId = (0, helpers_1.formatPhoneNumber)(to);
+        const sentMessage = yield client.sendMessage(chatId, message);
+        // Store outgoing message in database
+        const messageRecord = new models_1.Message({
+            messageId: sentMessage.id._serialized,
+            instanceId: instanceId,
+            userId: user._id,
+            direction: 'outgoing',
+            from: instance.phoneNumber || instanceId,
+            to: to,
+            type: 'text',
+            content: {
+                text: message
+            },
+            status: 'sent',
+            timestamp: new Date()
+        });
+        // Update message counts and store message record
+        yield Promise.all([
+            models_1.User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
+            models_1.WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } }),
+            messageRecord.save()
+        ]);
+        res.json({
+            success: true,
+            messageId: sentMessage.id._serialized,
+            instanceId: instanceId,
+            instanceName: instance.instanceName,
+            from: instance.phoneNumber,
+            to: to,
+            message: message,
+            timestamp: new Date().toISOString()
+        });
+    }
+    catch (error) {
+        console.error('Send message error:', error);
+        res.status(500).json({
+            error: 'Failed to send message',
+            details: error.message
+        });
+    }
+});
+exports.sendMessage = sendMessage;
+// Send media message
+const sendMedia = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const { instanceId, to, caption = '' } = req.body;
+    const user = req.user;
+    const { whatsappManager } = req.app.locals;
+    if (!req.file) {
+        return res.status(400).json({ error: 'No media file provided' });
+    }
+    if (user.messagesSent >= user.monthlyLimit) {
+        return res.status(429).json({ error: 'Monthly message limit exceeded' });
+    }
+    try {
+        const instance = yield models_1.WhatsAppInstance.findOne({
+            instanceId,
+            userId: user._id
+        });
+        if (!instance) {
+            return res.status(404).json({ error: 'WhatsApp number instance not found' });
+        }
+        const client = whatsappManager.getClient(user._id, instanceId);
+        if (!client) {
+            return res.status(400).json({ error: 'WhatsApp client not initialized' });
+        }
+        const clientStatus = whatsappManager.getClientStatus(user._id, instanceId);
+        if (clientStatus !== 'ready') {
+            return res.status(400).json({ error: `WhatsApp client not ready. Status: ${clientStatus}` });
+        }
+        const chatId = (0, helpers_1.formatPhoneNumber)(to);
+        const media = whatsapp_web_js_1.MessageMedia.fromFilePath(req.file.path);
+        const sentMessage = yield client.sendMessage(chatId, media, { caption });
+        // Determine media type
+        const mediaType = req.file.mimetype.startsWith('image/') ? 'image' :
+            req.file.mimetype.startsWith('video/') ? 'video' :
+                req.file.mimetype.startsWith('audio/') ? 'audio' : 'document';
+        // Store outgoing media message in database
+        const messageRecord = new models_1.Message({
+            messageId: sentMessage.id._serialized,
+            instanceId: instanceId,
+            userId: user._id,
+            direction: 'outgoing',
+            from: instance.phoneNumber || instanceId,
+            to: to,
+            type: mediaType,
+            content: {
+                caption: caption,
+                fileName: req.file.originalname,
+                mimeType: req.file.mimetype,
+                fileSize: req.file.size
+            },
+            status: 'sent',
+            timestamp: new Date()
+        });
+        // Update message counts and store message record
+        yield Promise.all([
+            models_1.User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
+            models_1.WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } }),
+            messageRecord.save()
+        ]);
+        res.json({
+            success: true,
+            messageId: sentMessage.id._serialized,
+            instanceId: instanceId,
+            instanceName: instance.instanceName,
+            from: instance.phoneNumber,
+            to: to,
+            mediaType: req.file.mimetype,
+            caption: caption,
+            timestamp: new Date().toISOString()
+        });
+    }
+    catch (error) {
+        // Clean up uploaded file on error
+        if (req.file && fs_1.default.existsSync(req.file.path)) {
+            fs_1.default.unlinkSync(req.file.path);
+        }
+        console.error('Send media error:', error);
+        res.status(500).json({
+            error: 'Failed to send media',
+            details: error.message
+        });
+    }
+});
+exports.sendMedia = sendMedia;
+// Send media from URL
+const sendMediaUrl = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c;
+    const { instanceId, to, mediaUrl, caption = '' } = req.body;
+    const user = req.user;
+    const { whatsappManager } = req.app.locals;
+    if (user.messagesSent >= user.monthlyLimit) {
+        return res.status(429).json({ error: 'Monthly message limit exceeded' });
+    }
+    try {
+        const instance = yield models_1.WhatsAppInstance.findOne({ instanceId, userId: user._id });
+        if (!instance) {
+            return res.status(404).json({ error: 'WhatsApp number instance not found' });
+        }
+        const client = whatsappManager.getClient(user._id, instanceId);
+        if (!client) {
+            return res.status(400).json({ error: 'WhatsApp client not initialized' });
+        }
+        const clientStatus = whatsappManager.getClientStatus(user._id, instanceId);
+        if (clientStatus !== 'ready') {
+            return res.status(400).json({ error: `WhatsApp client not ready. Status: ${clientStatus}` });
+        }
+        const chatId = (0, helpers_1.formatPhoneNumber)(to);
+        const media = yield whatsapp_web_js_1.MessageMedia.fromUrl(mediaUrl, { unsafeMime: true });
+        const sentMessage = yield client.sendMessage(chatId, media, { caption });
+        // Determine media type from URL or mime type
+        const mediaType = ((_a = media.mimetype) === null || _a === void 0 ? void 0 : _a.startsWith('image/')) ? 'image' :
+            ((_b = media.mimetype) === null || _b === void 0 ? void 0 : _b.startsWith('video/')) ? 'video' :
+                ((_c = media.mimetype) === null || _c === void 0 ? void 0 : _c.startsWith('audio/')) ? 'audio' : 'document';
+        // Store outgoing media URL message in database
+        const messageRecord = new models_1.Message({
+            messageId: sentMessage.id._serialized,
+            instanceId: instanceId,
+            userId: user._id,
+            direction: 'outgoing',
+            from: instance.phoneNumber || instanceId,
+            to: to,
+            type: mediaType,
+            content: {
+                caption: caption,
+                mediaUrl: mediaUrl,
+                mimeType: media.mimetype
+            },
+            status: 'sent',
+            timestamp: new Date()
+        });
+        // Update message counts and store message record
+        yield Promise.all([
+            models_1.User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
+            models_1.WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } }),
+            messageRecord.save()
+        ]);
+        res.json({
+            success: true,
+            messageId: sentMessage.id._serialized,
+            instanceId: instanceId,
+            instanceName: instance.instanceName,
+            from: instance.phoneNumber,
+            to: to,
+            mediaUrl: mediaUrl,
+            caption: caption,
+            timestamp: new Date().toISOString()
+        });
+    }
+    catch (error) {
+        console.error('Send media URL error:', error);
+        res.status(500).json({
+            error: 'Failed to send media from URL',
+            details: error.message
+        });
+    }
+});
+exports.sendMediaUrl = sendMediaUrl;
+// Get chat info
+const getChatInfo = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const { instanceId, phoneNumber } = req.query;
+    const user = req.user;
+    const { whatsappManager } = req.app.locals;
+    if (!instanceId || !phoneNumber) {
+        return res.status(400).json({ error: 'instanceId and phoneNumber are required' });
+    }
+    try {
+        const instance = yield models_1.WhatsAppInstance.findOne({ instanceId, userId: user._id });
+        if (!instance) {
+            return res.status(404).json({ error: 'WhatsApp number instance not found' });
+        }
+        const client = whatsappManager.getClient(user._id, instanceId);
+        if (!client) {
+            return res.status(400).json({ error: 'WhatsApp client not initialized' });
+        }
+        const chatId = (0, helpers_1.formatPhoneNumber)(phoneNumber);
+        const contact = yield client.getContactById(chatId);
+        const chat = yield client.getChatById(chatId);
+        res.json({
+            instanceId: instanceId,
+            instanceName: instance.instanceName,
+            chatId: chatId,
+            name: contact.name || contact.pushname || 'Unknown',
+            isGroup: chat.isGroup,
+            isOnline: contact.isOnline,
+            lastSeen: contact.lastSeen
+        });
+    }
+    catch (error) {
+        res.status(500).json({
+            error: 'Failed to get chat info',
+            details: error.message
+        });
+    }
+});
+exports.getChatInfo = getChatInfo;
+// Get messages with filters
+const getMessages = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const user = req.user;
+    const { instanceId, direction, type, search, from, to, startDate, endDate, page = 1, limit = 50 } = req.query;
+    try {
+        // Build query
+        const query = { userId: user._id };
+        if (instanceId) {
+            const instance = yield models_1.WhatsAppInstance.findOne({ instanceId, userId: user._id });
+            if (!instance) {
+                return res.status(404).json({ error: 'WhatsApp instance not found' });
+            }
+            query.instanceId = instanceId;
+        }
+        if (direction && direction !== 'all') {
+            query.direction = direction;
+        }
+        if (type) {
+            query.type = type;
+        }
+        if (from) {
+            query.from = new RegExp(from, 'i');
+        }
+        if (to) {
+            query.to = new RegExp(to, 'i');
+        }
+        if (search) {
+            query.$or = [
+                { 'content.text': new RegExp(search, 'i') },
+                { 'content.caption': new RegExp(search, 'i') },
+                { contactName: new RegExp(search, 'i') }
+            ];
+        }
+        if (startDate || endDate) {
+            query.timestamp = {};
+            if (startDate) {
+                query.timestamp.$gte = new Date(startDate);
+            }
+            if (endDate) {
+                query.timestamp.$lte = new Date(endDate);
+            }
+        }
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const totalMessages = yield models_1.Message.countDocuments(query);
+        const messages = yield models_1.Message.find(query)
+            .sort({ timestamp: -1 })
+            .skip(skip)
+            .limit(parseInt(limit))
+            .populate('templateId', 'name')
+            .populate('campaignId', 'name');
+        res.json({
+            messages,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total: totalMessages,
+                pages: Math.ceil(totalMessages / parseInt(limit))
+            }
+        });
+    }
+    catch (error) {
+        console.error('Get messages error:', error);
+        res.status(500).json({ error: 'Failed to retrieve messages' });
+    }
+});
+exports.getMessages = getMessages;
+// Get conversations (grouped by contact)
+const getConversations = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const user = req.user;
+    const { instanceId, limit = 20 } = req.query;
+    try {
+        const query = { userId: user._id };
+        if (instanceId) {
+            const instance = yield models_1.WhatsAppInstance.findOne({ instanceId, userId: user._id });
+            if (!instance) {
+                return res.status(404).json({ error: 'WhatsApp instance not found' });
+            }
+            query.instanceId = instanceId;
+        }
+        const conversations = yield models_1.Message.aggregate([
+            { $match: query },
+            {
+                $addFields: {
+                    contact: {
+                        $cond: [
+                            { $eq: ['$direction', 'incoming'] },
+                            '$from',
+                            '$to'
+                        ]
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        contact: '$contact',
+                        instanceId: '$instanceId'
+                    },
+                    lastMessage: { $last: '$$ROOT' },
+                    messageCount: { $sum: 1 },
+                    unreadCount: {
+                        $sum: {
+                            $cond: [
+                                { $and: [
+                                        { $eq: ['$direction', 'incoming'] },
+                                        { $ne: ['$status', 'read'] }
+                                    ] },
+                                1,
+                                0
+                            ]
+                        }
+                    }
+                }
+            },
+            { $sort: { 'lastMessage.timestamp': -1 } },
+            { $limit: parseInt(limit) },
+            {
+                $project: {
+                    contact: '$_id.contact',
+                    instanceId: '$_id.instanceId',
+                    contactName: '$lastMessage.contactName',
+                    lastMessage: {
+                        content: '$lastMessage.content',
+                        type: '$lastMessage.type',
+                        direction: '$lastMessage.direction',
+                        timestamp: '$lastMessage.timestamp'
+                    },
+                    messageCount: 1,
+                    unreadCount: 1
+                }
+            }
+        ]);
+        res.json({ conversations });
+    }
+    catch (error) {
+        console.error('Get conversations error:', error);
+        res.status(500).json({ error: 'Failed to retrieve conversations' });
+    }
+});
+exports.getConversations = getConversations;

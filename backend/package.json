@@ -1,12 +1,14 @@
 {
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
-    "prod": "NODE_ENV=production node server.js"
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "ts-node src/server.ts",
+    "prod": "NODE_ENV=production node dist/server.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
     "class-variance-authority": "^0.7.1",
+    "cloudinary": "^2.7.0",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "cors": "^2.8.5",
@@ -36,5 +38,12 @@
     "vaul": "^1.1.2",
     "whatsapp-web.js": "^1.31.0",
     "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.1",
+    "nodemon": "^3.1.7",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
   }
 }
