@@ -19,14 +19,14 @@ export function AppNavbar() {
   return (
     <header className="h-16 bg-card border-b border-border px-4 lg:px-6 flex items-center justify-between">
       <div className="flex items-center gap-4">
-        <Button
+        {/* <Button
           variant="ghost"
           size="icon"
           onClick={toggleSidebar}
           className="lg:hidden"
         >
           <Menu className="h-5 w-5" />
-        </Button>
+        </Button> */}
         
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">

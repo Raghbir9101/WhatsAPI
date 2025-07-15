@@ -36,7 +36,7 @@ export function AppSidebar() {
   const location = useLocation();
 
   return (
-    <>
+      <div className='bg-red-500 h-[calc(100vh-4rem)]'>
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
@@ -105,6 +105,6 @@ export function AppSidebar() {
           </nav>
         </div>
       </aside>
-    </>
+    </div>
   );
 }
