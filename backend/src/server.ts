@@ -2,6 +2,8 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import cors from 'cors';
+import swaggerUi from 'swagger-ui-express';
+import swaggerJsdoc from 'swagger-jsdoc';
 import path from 'path';
 import dotenv from 'dotenv';
 dotenv.config();
@@ -61,10 +63,41 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// API routes
+// Swagger configuration
+const swaggerOptions = {
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'WhatsAPI Backend API',
+      version: '1.0.0',
+      description: 'API documentation for WhatsAPI backend',
+    },
+    servers: [
+      {
+        url: 'http://localhost:80', // Update with your actual server URL
+      },
+    ],
+    basePath: '/api', // Add base path for API routes
+  },
+  apis: [
+    './src/routes/*.ts', 
+    './src/controllers/*.ts',
+    './src/routes/**/*.ts', // Add this to catch nested routes
+    './src/controllers/**/*.ts' // Add this to catch nested controllers
+  ],
+};
+
+const swaggerSpec = swaggerJsdoc(swaggerOptions);
+
+// Explicitly mount Swagger UI at /apis/docs
+app.use('/apis/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  explorer: true, // Add this to make the UI more interactive
+}));
+
+// Ensure API routes are mounted at /apis instead of /api
 app.use('/api', apiRoutes);
 
-// Catch-all route for SPA - must be BEFORE error handling middleware
+// Modify the catch-all route to handle /apis routes
 app.get('*', (req, res) => {
   // Don't serve index.html for API routes
   if (req.originalUrl.startsWith('/api/')) {
