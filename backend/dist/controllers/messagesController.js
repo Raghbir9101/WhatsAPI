@@ -17,9 +17,131 @@ const whatsapp_web_js_1 = require("whatsapp-web.js");
 const fs_1 = __importDefault(require("fs"));
 const models_1 = require("../models");
 const helpers_1 = require("../utils/helpers");
+// const sendMessageUnified = async (req, res) => {
+//   const { instanceId, to, message, mediaUrl, caption = '' } = req.body;
+//   const user = req.user;
+//   const { whatsappManager } = req.app.locals;
+//   // Check monthly limit
+//   if (user.messagesSent >= user.monthlyLimit) {
+//     return res.status(429).json({ error: 'Monthly message limit exceeded' });
+//   }
+//   try {
+//     // Find WhatsApp instance
+//     const instance = await WhatsAppInstance.findOne({
+//       instanceId,
+//       userId: user._id
+//     });
+//     if (!instance) {
+//       return res.status(404).json({ error: 'WhatsApp number instance not found' });
+//     }
+//     // Get WhatsApp client
+//     const client = whatsappManager.getClient(user._id, instanceId);
+//     if (!client) {
+//       return res.status(400).json({ error: 'WhatsApp client not initialized' });
+//     }
+//     // Check client status
+//     const clientStatus = whatsappManager.getClientStatus(user._id, instanceId);
+//     if (clientStatus !== 'ready') {
+//       return res.status(400).json({ error: `WhatsApp client not ready. Status: ${clientStatus}` });
+//     }
+//     const chatId = formatPhoneNumber(to);
+//     let sentMessage;
+//     let messageType = 'text';
+//     let messageContent = {};
+//     let responseData = {};
+//     // Determine message type and send accordingly
+//     if (req.file) {
+//       // File upload - send media from file
+//       const media = MessageMedia.fromFilePath(req.file.path);
+//       sentMessage = await client.sendMessage(chatId, media, { caption });
+//       messageType = req.file.mimetype.startsWith('image/') ? 'image' :
+//         req.file.mimetype.startsWith('video/') ? 'video' :
+//           req.file.mimetype.startsWith('audio/') ? 'audio' : 'document';
+//       messageContent = {
+//         caption: caption,
+//         fileName: req.file.originalname,
+//         mimeType: req.file.mimetype,
+//         fileSize: req.file.size
+//       };
+//       responseData = {
+//         mediaType: req.file.mimetype,
+//         caption: caption,
+//         fileName: req.file.originalname
+//       };
+//     } else if (mediaUrl) {
+//       // Media URL - send media from URL
+//       const media = await MessageMedia.fromUrl(mediaUrl, { unsafeMime: true });
+//       sentMessage = await client.sendMessage(chatId, media, { caption });
+//       messageType = media.mimetype?.startsWith('image/') ? 'image' :
+//         media.mimetype?.startsWith('video/') ? 'video' :
+//           media.mimetype?.startsWith('audio/') ? 'audio' : 'document';
+//       messageContent = {
+//         caption: caption,
+//         mediaUrl: mediaUrl,
+//         mimeType: media.mimetype
+//       };
+//       responseData = {
+//         mediaUrl: mediaUrl,
+//         caption: caption,
+//         mimeType: media.mimetype
+//       };
+//     } else if (message) {
+//       // Text message
+//       sentMessage = await client.sendMessage(chatId, message);
+//       messageType = 'text';
+//       messageContent = { text: message };
+//       responseData = { message: message };
+//     } else {
+//       return res.status(400).json({
+//         error: 'No message content provided. Please provide either message text, file upload, or mediaUrl.'
+//       });
+//     }
+//     // Store message in database
+//     const messageRecord = new Message({
+//       messageId: sentMessage.id._serialized,
+//       instanceId: instanceId,
+//       userId: user._id,
+//       direction: 'outgoing',
+//       from: instance.phoneNumber || instanceId,
+//       to: to,
+//       type: messageType,
+//       content: messageContent,
+//       status: 'sent',
+//       timestamp: new Date()
+//     });
+//     // Update message counts and store message record
+//     await Promise.all([
+//       User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
+//       WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } }),
+//       messageRecord.save()
+//     ]);
+//     // Send success response
+//     res.json({
+//       success: true,
+//       messageId: sentMessage.id._serialized,
+//       instanceId: instanceId,
+//       instanceName: instance.instanceName,
+//       from: instance.phoneNumber,
+//       to: to,
+//       type: messageType,
+//       timestamp: new Date().toISOString(),
+//       ...responseData
+//     });
+//   } catch (error) {
+//     // Clean up uploaded file on error
+//     if (req.file && fs.existsSync(req.file.path)) {
+//       fs.unlinkSync(req.file.path);
+//     }
+//     console.error('Send message error:', error);
+//     res.status(500).json({
+//       error: 'Failed to send message',
+//       details: error.message
+//     });
+//   }
+// };
 const sendMessageUnified = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c;
-    const { instanceId, to, message, mediaUrl, caption = '' } = req.body;
+    const { instanceId, to, message, mediaUrl, caption = '', base64Data } = req.body;
     const user = req.user;
     const { whatsappManager } = req.app.locals;
     // Check monthly limit
@@ -70,6 +192,42 @@ const sendMessageUnified = (req, res) => __awaiter(void 0, void 0, void 0, funct
                 fileName: req.file.originalname
             };
         }
+        else if (base64Data) {
+            // Base64 data - send media from base64 (full data URI format)
+            // Extract mime type from data URI (e.g., "data:image/png;base64,...")
+            const dataUriMatch = base64Data.match(/^data:([^;]+);base64,(.+)$/);
+            if (!dataUriMatch) {
+                return res.status(400).json({
+                    error: 'Invalid base64 data format. Expected data URI format (data:mime/type;base64,data)'
+                });
+            }
+            const mimeType = dataUriMatch[1];
+            const base64Content = dataUriMatch[2];
+            // Generate random filename based on mime type
+            const generateRandomFileName = (mimeType) => {
+                const timestamp = Date.now();
+                const randomStr = Math.random().toString(36).substring(2, 8);
+                const extension = mimeType.split('/')[1] || 'bin';
+                return `file_${timestamp}_${randomStr}.${extension}`;
+            };
+            const fileName = generateRandomFileName(mimeType);
+            const media = new whatsapp_web_js_1.MessageMedia(mimeType, base64Content, fileName);
+            sentMessage = yield client.sendMessage(chatId, media, { caption });
+            messageType = mimeType.startsWith('image/') ? 'image' :
+                mimeType.startsWith('video/') ? 'video' :
+                    mimeType.startsWith('audio/') ? 'audio' : 'document';
+            messageContent = {
+                caption: caption,
+                fileName: fileName,
+                mimeType: mimeType,
+                isBase64: true
+            };
+            responseData = {
+                mediaType: mimeType,
+                caption: caption,
+                fileName: fileName
+            };
+        }
         else if (mediaUrl) {
             // Media URL - send media from URL
             const media = yield whatsapp_web_js_1.MessageMedia.fromUrl(mediaUrl, { unsafeMime: true });
@@ -97,7 +255,7 @@ const sendMessageUnified = (req, res) => __awaiter(void 0, void 0, void 0, funct
         }
         else {
             return res.status(400).json({
-                error: 'No message content provided. Please provide either message text, file upload, or mediaUrl.'
+                error: 'No message content provided. Please provide either message text, file upload, mediaUrl, or base64Data (data URI format).'
             });
         }
         // Store message in database
