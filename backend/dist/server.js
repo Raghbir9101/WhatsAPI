@@ -53,7 +53,9 @@ app.locals.indiaMartScheduler = IndiaMartScheduler_1.default;
 });
 // Basic middleware
 // app.use(helmet());
-app.use((0, cors_1.default)());
+app.use((0, cors_1.default)({
+    origin: '*',
+}));
 app.use(express_1.default.json({ limit: '10mb' }));
 app.use(express_1.default.urlencoded({ extended: true }));
 // Serve static files

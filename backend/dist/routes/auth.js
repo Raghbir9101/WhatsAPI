@@ -6,9 +6,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const router = express_1.default.Router();
 const authController_1 = require("../controllers/authController");
-const validation_1 = require("../middleware/validation");
 // User registration
-router.post('/register', validation_1.userRegistrationRules, validation_1.handleValidation, authController_1.register);
+router.post('/register', authController_1.register);
 // User login
-router.post('/login', validation_1.userLoginRules, validation_1.handleValidation, authController_1.login);
+router.post('/login', authController_1.login);
 exports.default = router;
