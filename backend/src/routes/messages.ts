@@ -183,7 +183,7 @@ router.get('/stats', verifyApiKey, getMessageStats);
  *       401:
  *         description: Unauthorized access
  */
-router.post('/send-message-unified', verifyApiKey, sendMessageRules, handleValidation, sendMessageUnified);
+router.post('/send-message-unified', verifyApiKey, sendMessageUnified);
 
 /**
  * @openapi
