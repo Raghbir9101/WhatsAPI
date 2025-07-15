@@ -7,19 +7,19 @@ import { Document } from 'mongoose';
 
 // Define the UserDocument type
 interface UserDocument extends Document {
-  email: string;
-  name: string;
-  company: string;
-  apiKey: string;
+    email: string;
+    name: string;
+    company: string;
+    apiKey: string;
 }
 
 // Extend the Request interface to include the user property
 declare global {
-  namespace Express {
-    interface Request {
-      user?: UserDocument;
+    namespace Express {
+        interface Request {
+            user?: UserDocument;
+        }
     }
-  }
 }
 
 const router = express.Router();
@@ -76,7 +76,7 @@ router.post('/login', userLoginRules, handleValidation, login);
  *       400:
  *         description: Registration failed
  */
-router.post('/register', userRegistrationRules, handleValidation, register);
+router.post('/register', register);
 
 /**
  * @openapi
@@ -93,9 +93,9 @@ router.post('/register', userRegistrationRules, handleValidation, register);
  *         description: Unauthorized
  */
 router.get('/me', verifyApiKey, (req: Request, res: Response) => {
-  // Return the authenticated user's details
-  const { email, name, company, apiKey } = req.user!;
-  res.json({ email, name, company, apiKey });
+    // Return the authenticated user's details
+    const { email, name, company, apiKey } = req.user!;
+    res.json({ email, name, company, apiKey });
 });
 
 /**
@@ -113,9 +113,9 @@ router.get('/me', verifyApiKey, (req: Request, res: Response) => {
  *         description: Unauthorized
  */
 router.post('/logout', verifyApiKey, (req: Request, res: Response) => {
-  // In a stateless JWT system, logout is typically handled client-side
-  // Here we could invalidate the API key or add additional logout logic if needed
-  res.json({ message: 'Logged out successfully' });
+    // In a stateless JWT system, logout is typically handled client-side
+    // Here we could invalidate the API key or add additional logout logic if needed
+    res.json({ message: 'Logged out successfully' });
 });
 
 export default router; 

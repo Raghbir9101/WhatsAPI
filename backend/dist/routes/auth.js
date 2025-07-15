@@ -59,7 +59,7 @@ router.post('/login', validation_1.userLoginRules, validation_1.handleValidation
  *       400:
  *         description: Registration failed
  */
-router.post('/register', validation_1.userRegistrationRules, validation_1.handleValidation, authController_1.register);
+router.post('/register', authController_1.register);
 /**
  * @openapi
  * /api/me:
