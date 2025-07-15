@@ -25,6 +25,8 @@ const schedule_1 = __importDefault(require("./schedule"));
 const campaigns_1 = __importDefault(require("./campaigns"));
 const templates_1 = __importDefault(require("./templates"));
 const reports_1 = __importDefault(require("./reports"));
+const indiamart_1 = __importDefault(require("./indiamart"));
+const admin_1 = __importDefault(require("./admin"));
 // Import controllers for backward compatibility routes
 const messagesController_1 = require("../controllers/messagesController");
 const models_1 = require("../models");
@@ -72,4 +74,6 @@ router.use('/schedule', schedule_1.default);
 router.use('/campaigns', campaigns_1.default);
 router.use('/templates', templates_1.default);
 router.use('/reports', reports_1.default);
+router.use('/indiamart', indiamart_1.default);
+router.use('/admin', admin_1.default);
 exports.default = router;

@@ -6,7 +6,8 @@ import {
   sendMediaUrl, 
   getChatInfo, 
   getMessages, 
-  getConversations 
+  getConversations, 
+  sendMessageUnified
 } from '../controllers/messagesController';
 import { getMessageStats } from '../controllers/statsController';
 import { verifyApiKey } from '../middleware/auth';
@@ -135,6 +136,54 @@ router.get('/conversations', verifyApiKey, getConversations);
  *         description: Unauthorized access
  */
 router.get('/stats', verifyApiKey, getMessageStats);
+
+/**
+ * @openapi
+ * /api/messages/send-message-unified:
+ *   post:
+ *     summary: Send a unified message with advanced options
+ *     tags: [Messages]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               instanceId:
+ *                 type: string
+ *                 description: WhatsApp instance ID
+ *               to:
+ *                 type: string
+ *                 description: Recipient phone number or chat ID
+ *               message:
+ *                 type: string
+ *                 description: Message text (max 4096 characters)
+ *               templateName:
+ *                 type: string
+ *                 description: Optional template name for message
+ *               templateVariables:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Optional variables for template message
+ *               mediaUrl:
+ *                 type: string
+ *                 description: Optional URL of media to send with message
+ *               caption:
+ *                 type: string
+ *                 description: Optional caption for media message
+ *     responses:
+ *       200:
+ *         description: Message sent successfully
+ *       400:
+ *         description: Invalid input
+ *       401:
+ *         description: Unauthorized access
+ */
+router.post('/send-message-unified', verifyApiKey, sendMessageRules, handleValidation, sendMessageUnified);
 
 /**
  * @openapi

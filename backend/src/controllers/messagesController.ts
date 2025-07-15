@@ -3,6 +3,150 @@ import fs from 'fs';
 import { WhatsAppInstance, Message, User } from '../models';
 import { formatPhoneNumber } from '../utils/helpers';
 
+const sendMessageUnified = async (req, res) => {
+  const { instanceId, to, message, mediaUrl, caption = '' } = req.body;
+  const user = req.user;
+  const { whatsappManager } = req.app.locals;
+
+  // Check monthly limit
+  if (user.messagesSent >= user.monthlyLimit) {
+    return res.status(429).json({ error: 'Monthly message limit exceeded' });
+  }
+
+  try {
+    // Find WhatsApp instance
+    const instance = await WhatsAppInstance.findOne({
+      instanceId,
+      userId: user._id
+    });
+
+    if (!instance) {
+      return res.status(404).json({ error: 'WhatsApp number instance not found' });
+    }
+
+    // Get WhatsApp client
+    const client = whatsappManager.getClient(user._id, instanceId);
+    if (!client) {
+      return res.status(400).json({ error: 'WhatsApp client not initialized' });
+    }
+
+    // Check client status
+    const clientStatus = whatsappManager.getClientStatus(user._id, instanceId);
+    if (clientStatus !== 'ready') {
+      return res.status(400).json({ error: `WhatsApp client not ready. Status: ${clientStatus}` });
+    }
+
+    const chatId = formatPhoneNumber(to);
+    let sentMessage;
+    let messageType = 'text';
+    let messageContent = {};
+    let responseData = {};
+
+    // Determine message type and send accordingly
+    if (req.file) {
+      // File upload - send media from file
+      const media = MessageMedia.fromFilePath(req.file.path);
+      sentMessage = await client.sendMessage(chatId, media, { caption });
+
+      messageType = req.file.mimetype.startsWith('image/') ? 'image' :
+        req.file.mimetype.startsWith('video/') ? 'video' :
+          req.file.mimetype.startsWith('audio/') ? 'audio' : 'document';
+
+      messageContent = {
+        caption: caption,
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        fileSize: req.file.size
+      };
+
+      responseData = {
+        mediaType: req.file.mimetype,
+        caption: caption,
+        fileName: req.file.originalname
+      };
+
+    } else if (mediaUrl) {
+      // Media URL - send media from URL
+      const media = await MessageMedia.fromUrl(mediaUrl, { unsafeMime: true });
+      sentMessage = await client.sendMessage(chatId, media, { caption });
+
+      messageType = media.mimetype?.startsWith('image/') ? 'image' :
+        media.mimetype?.startsWith('video/') ? 'video' :
+          media.mimetype?.startsWith('audio/') ? 'audio' : 'document';
+
+      messageContent = {
+        caption: caption,
+        mediaUrl: mediaUrl,
+        mimeType: media.mimetype
+      };
+
+      responseData = {
+        mediaUrl: mediaUrl,
+        caption: caption,
+        mimeType: media.mimetype
+      };
+
+    } else if (message) {
+      // Text message
+      sentMessage = await client.sendMessage(chatId, message);
+      messageType = 'text';
+      messageContent = { text: message };
+      responseData = { message: message };
+
+    } else {
+      return res.status(400).json({
+        error: 'No message content provided. Please provide either message text, file upload, or mediaUrl.'
+      });
+    }
+
+    // Store message in database
+    const messageRecord = new Message({
+      messageId: sentMessage.id._serialized,
+      instanceId: instanceId,
+      userId: user._id,
+      direction: 'outgoing',
+      from: instance.phoneNumber || instanceId,
+      to: to,
+      type: messageType,
+      content: messageContent,
+      status: 'sent',
+      timestamp: new Date()
+    });
+
+    // Update message counts and store message record
+    await Promise.all([
+      User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
+      WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } }),
+      messageRecord.save()
+    ]);
+
+    // Send success response
+    res.json({
+      success: true,
+      messageId: sentMessage.id._serialized,
+      instanceId: instanceId,
+      instanceName: instance.instanceName,
+      from: instance.phoneNumber,
+      to: to,
+      type: messageType,
+      timestamp: new Date().toISOString(),
+      ...responseData
+    });
+
+  } catch (error) {
+    // Clean up uploaded file on error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+
+    console.error('Send message error:', error);
+    res.status(500).json({
+      error: 'Failed to send message',
+      details: error.message
+    });
+  }
+};
+
 // Send text message
 const sendMessage = async (req, res) => {
   const { instanceId, to, message } = req.body;
@@ -35,7 +179,7 @@ const sendMessage = async (req, res) => {
 
     const chatId = formatPhoneNumber(to);
     const sentMessage = await client.sendMessage(chatId, message);
-    
+
     // Store outgoing message in database
     const messageRecord = new Message({
       messageId: sentMessage.id._serialized,
@@ -51,14 +195,14 @@ const sendMessage = async (req, res) => {
       status: 'sent',
       timestamp: new Date()
     });
-    
+
     // Update message counts and store message record
     await Promise.all([
       User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
       WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } }),
       messageRecord.save()
     ]);
-    
+
     res.json({
       success: true,
       messageId: sentMessage.id._serialized,
@@ -114,13 +258,13 @@ const sendMedia = async (req, res) => {
 
     const chatId = formatPhoneNumber(to);
     const media = MessageMedia.fromFilePath(req.file.path);
-    
+
     const sentMessage = await client.sendMessage(chatId, media, { caption });
-    
+
     // Determine media type
     const mediaType = req.file.mimetype.startsWith('image/') ? 'image' :
-                      req.file.mimetype.startsWith('video/') ? 'video' :
-                      req.file.mimetype.startsWith('audio/') ? 'audio' : 'document';
+      req.file.mimetype.startsWith('video/') ? 'video' :
+        req.file.mimetype.startsWith('audio/') ? 'audio' : 'document';
 
     // Store outgoing media message in database
     const messageRecord = new Message({
@@ -140,14 +284,14 @@ const sendMedia = async (req, res) => {
       status: 'sent',
       timestamp: new Date()
     });
-    
+
     // Update message counts and store message record
     await Promise.all([
       User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
       WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } }),
       messageRecord.save()
     ]);
-    
+
     res.json({
       success: true,
       messageId: sentMessage.id._serialized,
@@ -164,7 +308,7 @@ const sendMedia = async (req, res) => {
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
-    
+
     console.error('Send media error:', error);
     res.status(500).json({
       error: 'Failed to send media',
@@ -200,14 +344,14 @@ const sendMediaUrl = async (req, res) => {
     }
 
     const chatId = formatPhoneNumber(to);
-    const media = await MessageMedia.fromUrl(mediaUrl, {unsafeMime: true});
-    
+    const media = await MessageMedia.fromUrl(mediaUrl, { unsafeMime: true });
+
     const sentMessage = await client.sendMessage(chatId, media, { caption });
-    
+
     // Determine media type from URL or mime type
     const mediaType = media.mimetype?.startsWith('image/') ? 'image' :
-                      media.mimetype?.startsWith('video/') ? 'video' :
-                      media.mimetype?.startsWith('audio/') ? 'audio' : 'document';
+      media.mimetype?.startsWith('video/') ? 'video' :
+        media.mimetype?.startsWith('audio/') ? 'audio' : 'document';
 
     // Store outgoing media URL message in database
     const messageRecord = new Message({
@@ -226,14 +370,14 @@ const sendMediaUrl = async (req, res) => {
       status: 'sent',
       timestamp: new Date()
     });
-    
+
     // Update message counts and store message record
     await Promise.all([
       User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
       WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } }),
       messageRecord.save()
     ]);
-    
+
     res.json({
       success: true,
       messageId: sentMessage.id._serialized,
@@ -278,7 +422,7 @@ const getChatInfo = async (req, res) => {
     const chatId = formatPhoneNumber(phoneNumber);
     const contact = await client.getContactById(chatId);
     const chat = await client.getChatById(chatId);
-    
+
     res.json({
       instanceId: instanceId,
       instanceName: instance.instanceName,
@@ -315,7 +459,7 @@ const getMessages = async (req, res) => {
   try {
     // Build query
     const query = { userId: user._id } as any;
-    
+
     if (instanceId) {
       const instance = await WhatsAppInstance.findOne({ instanceId, userId: user._id });
       if (!instance) {
@@ -323,23 +467,23 @@ const getMessages = async (req, res) => {
       }
       query.instanceId = instanceId;
     }
-    
+
     if (direction && direction !== 'all') {
       query.direction = direction;
     }
-    
+
     if (type) {
       query.type = type;
     }
-    
+
     if (from) {
       query.from = new RegExp(from, 'i');
     }
-    
+
     if (to) {
       query.to = new RegExp(to, 'i');
     }
-    
+
     if (search) {
       query.$or = [
         { 'content.text': new RegExp(search, 'i') },
@@ -347,7 +491,7 @@ const getMessages = async (req, res) => {
         { contactName: new RegExp(search, 'i') }
       ];
     }
-    
+
     if (startDate || endDate) {
       query.timestamp = {};
       if (startDate) {
@@ -360,7 +504,7 @@ const getMessages = async (req, res) => {
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const totalMessages = await Message.countDocuments(query);
-    
+
     const messages = await Message.find(query)
       .sort({ timestamp: -1 })
       .skip(skip)
@@ -390,7 +534,7 @@ const getConversations = async (req, res) => {
 
   try {
     const query = { userId: user._id } as any;
-    
+
     if (instanceId) {
       const instance = await WhatsAppInstance.findOne({ instanceId, userId: user._id });
       if (!instance) {
@@ -423,10 +567,12 @@ const getConversations = async (req, res) => {
           unreadCount: {
             $sum: {
               $cond: [
-                { $and: [
-                  { $eq: ['$direction', 'incoming'] },
-                  { $ne: ['$status', 'read'] }
-                ]},
+                {
+                  $and: [
+                    { $eq: ['$direction', 'incoming'] },
+                    { $ne: ['$status', 'read'] }
+                  ]
+                },
                 1,
                 0
               ]
@@ -461,6 +607,7 @@ const getConversations = async (req, res) => {
 };
 
 export {
+  sendMessageUnified,
   sendMessage,
   sendMedia,
   sendMediaUrl,

@@ -41,70 +41,76 @@ class WhatsAppManager {
                     dataPath: path_1.default.join(os_1.default.tmpdir(), 'whatsapp-api-sessions')
                 })
             };
-            // Add Puppeteer config for production
-            if (isProduction) {
-                const possibleChromePaths = [
-                    process.env.CHROME_BIN,
-                    '/usr/bin/google-chrome-stable',
-                    '/usr/bin/google-chrome',
-                    '/usr/bin/chromium-browser',
-                    '/usr/bin/chromium',
-                    '/snap/bin/chromium'
-                ];
-                let chromePath = null;
-                for (const path of possibleChromePaths) {
-                    if (path && fs_1.default.existsSync(path)) {
-                        chromePath = path;
-                        console.log(`Found Chrome at: ${chromePath}`);
-                        break;
-                    }
+            // Add Puppeteer config only in production
+            // if (isProduction) {
+            // Try to find Chrome executable
+            const possibleChromePaths = [
+                process.env.CHROME_BIN,
+                '/usr/bin/google-chrome-stable',
+                '/usr/bin/google-chrome',
+                '/usr/bin/chromium-browser',
+                '/usr/bin/chromium',
+                '/snap/bin/chromium'
+            ];
+            let chromePath = null;
+            for (const path of possibleChromePaths) {
+                if (path && require('fs').existsSync(path)) {
+                    chromePath = path;
+                    console.log(`Found Chrome at: ${chromePath}`);
+                    break;
                 }
-                if (!chromePath) {
-                    console.error('Chrome/Chromium not found! Please install Chrome or set CHROME_BIN environment variable.');
-                }
-                const userDataDir = `/tmp/chrome-${clientId}-${Date.now()}`;
-                clientConfig.puppeteer = {
-                    headless: true,
-                    args: [
-                        '--no-sandbox',
-                        '--disable-setuid-sandbox',
-                        '--disable-dev-shm-usage',
-                        '--disable-accelerated-2d-canvas',
-                        '--no-first-run',
-                        '--no-zygote',
-                        '--disable-gpu',
-                        '--disable-extensions',
-                        '--disable-background-timer-throttling',
-                        '--disable-backgrounding-occluded-windows',
-                        '--disable-renderer-backgrounding',
-                        '--disable-features=TranslateUI',
-                        '--disable-web-security',
-                        '--disable-features=VizDisplayCompositor',
-                        '--disable-crash-reporter',
-                        '--disable-in-process-stack-traces',
-                        '--disable-logging',
-                        '--disable-default-apps',
-                        '--mute-audio',
-                        '--no-default-browser-check',
-                        '--no-pings',
-                        '--window-size=1366,768',
-                        `--user-data-dir=${userDataDir}`,
-                        `--data-path=${userDataDir}`,
-                        `--disk-cache-dir=${userDataDir}/cache`,
-                        '--remote-debugging-port=0'
-                    ],
-                    executablePath: chromePath,
-                    timeout: 120000,
-                    ignoreDefaultArgs: ['--disable-extensions'],
-                    ignoreHTTPSErrors: true
-                };
             }
+            if (!chromePath) {
+                console.error('Chrome/Chromium not found! Please install Chrome or set CHROME_BIN environment variable.');
+            }
+            // Create unique user data directory for this client
+            const userDataDir = `/tmp/chrome-${clientId}-${Date.now()}`;
+            clientConfig.puppeteer = {
+                headless: true,
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--disable-gpu',
+                    '--disable-extensions',
+                    '--disable-background-timer-throttling',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-renderer-backgrounding',
+                    '--disable-features=TranslateUI',
+                    '--disable-web-security',
+                    '--disable-features=VizDisplayCompositor',
+                    '--disable-crash-reporter',
+                    '--disable-in-process-stack-traces',
+                    '--disable-logging',
+                    '--disable-default-apps',
+                    '--mute-audio',
+                    '--no-default-browser-check',
+                    '--no-pings',
+                    '--window-size=1366,768',
+                    `--user-data-dir=${userDataDir}`,
+                    `--data-path=${userDataDir}`,
+                    `--disk-cache-dir=${userDataDir}/cache`,
+                    '--remote-debugging-port=0' // Use random available port
+                ],
+                executablePath: chromePath,
+                timeout: 120000, // Increased timeout
+                ignoreDefaultArgs: ['--disable-extensions'],
+                ignoreHTTPSErrors: true
+            };
+            // }
             const client = new whatsapp_web_js_1.Client(clientConfig);
             yield this.setupClientEvents(client, clientId, instanceId, instanceName);
             this.clients.set(clientId, client);
             this.clientStatus.set(clientId, 'initializing');
             try {
                 console.log(`[WhatsAppManager] Initializing client for clientId: ${clientId}`);
+                console.log(`[WhatsAppManager] Chrome path: ${chromePath}`);
+                console.log(`[WhatsAppManager] Is Production: ${isProduction}`);
+                console.log(`[WhatsAppManager] Starting client.initialize() call...`);
+                // Add timeout for initialization
                 const initPromise = client.initialize();
                 const timeoutPromise = new Promise((_, reject) => {
                     setTimeout(() => reject(new Error('Client initialization timeout after 2 minutes')), 120000);
@@ -115,8 +121,10 @@ class WhatsAppManager {
             }
             catch (error) {
                 console.error(`[WhatsAppManager] FAILED to initialize client ${clientId}:`, error);
+                console.error(`[WhatsAppManager] Error stack:`, error.stack);
                 this.clients.delete(clientId);
                 this.clientStatus.delete(clientId);
+                // Try to destroy the client if it exists
                 try {
                     yield client.destroy();
                 }

@@ -8,6 +8,7 @@ import IndiaMartConfig from './IndiaMartConfig';
 import IndiaMartLog from './IndiaMartLog';
 import LeadSource from './LeadSource';
 import LeadData from './LeadData';
+import Package from './Package';
 
 export {
   User,
@@ -19,5 +20,6 @@ export {
   IndiaMartConfig,
   IndiaMartLog,
   LeadSource,
-  LeadData
+  LeadData,
+  Package
 };

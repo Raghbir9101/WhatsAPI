@@ -14,7 +14,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
-const helmet_1 = __importDefault(require("helmet"));
 const cors_1 = __importDefault(require("cors"));
 const path_1 = __importDefault(require("path"));
 const dotenv_1 = __importDefault(require("dotenv"));
@@ -23,8 +22,10 @@ dotenv_1.default.config();
 const database_1 = require("./config/database");
 const WhatsAppManager_1 = __importDefault(require("./services/WhatsAppManager"));
 const SchedulerService_1 = __importDefault(require("./services/SchedulerService"));
+const IndiaMartScheduler_1 = __importDefault(require("./services/IndiaMartScheduler"));
 const helpers_1 = require("./utils/helpers");
 const errorHandler_1 = require("./middleware/errorHandler");
+const seed_1 = require("./utils/seed");
 // Import routes
 const routes_1 = __importDefault(require("./routes"));
 const app = (0, express_1.default)();
@@ -38,16 +39,20 @@ const schedulerService = new SchedulerService_1.default(whatsappManager);
 // Store services in app.locals for access in controllers
 app.locals.whatsappManager = whatsappManager;
 app.locals.schedulerService = schedulerService;
+app.locals.indiaMartScheduler = IndiaMartScheduler_1.default;
 // Connect to database
-(0, database_1.connectDB)().then(() => {
-    // Start scheduler after database connection
+(0, database_1.connectDB)().then(() => __awaiter(void 0, void 0, void 0, function* () {
+    // Run seed data
+    yield (0, seed_1.runSeed)();
+    // Start schedulers after database connection
     schedulerService.start();
-}).catch(err => {
+    IndiaMartScheduler_1.default.start();
+})).catch(err => {
     console.error('Database connection failed:', err);
     process.exit(1);
 });
 // Basic middleware
-app.use((0, helmet_1.default)());
+// app.use(helmet());
 app.use((0, cors_1.default)());
 app.use(express_1.default.json({ limit: '10mb' }));
 app.use(express_1.default.urlencoded({ extended: true }));
@@ -78,6 +83,7 @@ process.on('SIGINT', () => __awaiter(void 0, void 0, void 0, function* () {
     console.log('Shutting down gracefully...');
     try {
         yield whatsappManager.shutdown();
+        IndiaMartScheduler_1.default.stop();
         process.exit(0);
     }
     catch (error) {
@@ -93,6 +99,7 @@ app.listen(PORT, () => {
     console.log('   ✅ Multiple WhatsApp numbers per user');
     console.log('   ✅ QR code scanning for each number');
     console.log('   ✅ Complete WhatsApp messaging API');
+    console.log('   ✅ IndiaMART leads integration');
     console.log('   ✅ Organized MVC structure');
     console.log('   ✅ Modular architecture');
 });

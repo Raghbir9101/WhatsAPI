@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { adminApi } from './admin-api';
 
 interface AdminAuthContextType {
   isAuthenticated: boolean;
@@ -30,8 +31,8 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const adminToken = localStorage.getItem('admin_token');
-    const adminData = localStorage.getItem('admin_data');
+    const adminToken = localStorage.getItem('admin-token');
+    const adminData = localStorage.getItem('admin-data');
     
     if (adminToken && adminData) {
       try {
@@ -40,8 +41,8 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsAuthenticated(true);
       } catch (error) {
         console.error('Failed to parse admin data:', error);
-        localStorage.removeItem('admin_token');
-        localStorage.removeItem('admin_data');
+        localStorage.removeItem('admin-token');
+        localStorage.removeItem('admin-data');
       }
     }
     setLoading(false);
@@ -49,21 +50,17 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const login = async (email: string, password: string) => {
     try {
-      // Mock admin login - replace with actual API call
-      if (email === 'admin@ceoitbox.com' && password === 'admin123') {
-        const adminData = {
-          email: 'admin@ceoitbox.com',
-          name: 'Admin User',
-          role: 'SUPER_ADMIN'
-        };
+      const response = await adminApi.login(email, password);
+      
+      const adminData = {
+        email: response.admin.email,
+        name: response.admin.name,
+        role: response.admin.role
+      };
 
-        setAdmin(adminData);
-        setIsAuthenticated(true);
-        localStorage.setItem('admin_token', 'mock_admin_token');
-        localStorage.setItem('admin_data', JSON.stringify(adminData));
-      } else {
-        throw new Error('Invalid admin credentials');
-      }
+      setAdmin(adminData);
+      setIsAuthenticated(true);
+      localStorage.setItem('admin-data', JSON.stringify(adminData));
     } catch (error) {
       throw error;
     }
@@ -72,8 +69,8 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const logout = () => {
     setAdmin(null);
     setIsAuthenticated(false);
-    localStorage.removeItem('admin_token');
-    localStorage.removeItem('admin_data');
+    adminApi.logout();
+    localStorage.removeItem('admin-data');
   };
 
   return (

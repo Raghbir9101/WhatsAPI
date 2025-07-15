@@ -106,24 +106,65 @@ export function AdminSettings() {
     setPackageForm({ ...packageForm, features: newFeatures });
   };
 
+  const packageSaveMutation = useMutation({
+    mutationFn: (data: any) => 
+      editingPackage 
+        ? adminApi.updatePackage(editingPackage.id, data)
+        : adminApi.createPackage(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-packages'] });
+      toast({ 
+        title: 'Success', 
+        description: `Package ${editingPackage ? 'updated' : 'created'} successfully` 
+      });
+      setPackageDialogOpen(false);
+      resetForm();
+    },
+    onError: (error) => {
+      toast({ 
+        title: 'Error', 
+        description: 'Failed to save package',
+        variant: 'destructive'
+      });
+    }
+  });
+
+  const packageDeleteMutation = useMutation({
+    mutationFn: (id: string) => adminApi.deletePackage(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-packages'] });
+      toast({ 
+        title: 'Success', 
+        description: 'Package deleted successfully' 
+      });
+      setDeleteDialogOpen(false);
+      setPackageToDelete(null);
+    },
+    onError: (error) => {
+      toast({ 
+        title: 'Error', 
+        description: 'Failed to delete package',
+        variant: 'destructive'
+      });
+    }
+  });
+
   const handleSavePackage = () => {
-    // Mock save - in real app, would call API
-    toast({ 
-      title: 'Success', 
-      description: `Package ${editingPackage ? 'updated' : 'created'} successfully` 
-    });
-    setPackageDialogOpen(false);
-    resetForm();
+    const packageData = {
+      name: packageForm.name,
+      credits: parseInt(packageForm.credits),
+      price: parseFloat(packageForm.price),
+      validityDays: parseInt(packageForm.validityDays),
+      features: packageForm.features.filter(f => f.trim() !== '')
+    };
+
+    packageSaveMutation.mutate(packageData);
   };
 
   const handleDeletePackage = () => {
-    // Mock delete - in real app, would call API
-    toast({ 
-      title: 'Success', 
-      description: 'Package deleted successfully' 
-    });
-    setDeleteDialogOpen(false);
-    setPackageToDelete(null);
+    if (packageToDelete) {
+      packageDeleteMutation.mutate(packageToDelete.id);
+    }
   };
 
   return (
