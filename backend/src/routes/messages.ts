@@ -1,22 +1,22 @@
 import express from 'express';
 const router = express.Router();
-import { 
-  sendMessage, 
-  sendMedia, 
-  sendMediaUrl, 
-  getChatInfo, 
-  getMessages, 
-  getConversations, 
+import {
+  sendMessage,
+  sendMedia,
+  sendMediaUrl,
+  getChatInfo,
+  getMessages,
+  getConversations,
   sendMessageUnified
 } from '../controllers/messagesController';
 import { getMessageStats } from '../controllers/statsController';
 import { verifyApiKey } from '../middleware/auth';
 import { upload } from '../config/multer';
-import { 
-  sendMessageRules, 
-  sendMediaRules, 
-  sendMediaUrlRules, 
-  handleValidation 
+import {
+  sendMessageRules,
+  sendMediaRules,
+  sendMediaUrlRules,
+  handleValidation
 } from '../middleware/validation';
 
 /**
@@ -183,7 +183,7 @@ router.get('/stats', verifyApiKey, getMessageStats);
  *       401:
  *         description: Unauthorized access
  */
-router.post('/send-message-unified', verifyApiKey, sendMessageUnified);
+router.post('/send-message-unified', verifyApiKey, upload.single('media'), sendMessageUnified);
 
 /**
  * @openapi
