@@ -49,23 +49,17 @@ connectDB().then(async () => {
 
 // Basic middleware
 // app.use(helmet());
+
 app.use(cors({
   origin: '*',
 }));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Serve static files
 app.use(express.static(path.join(__dirname, "../../frontend", "dist")));
 app.use(express.static('public'));
-
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200,
-  message: 'Too many requests from this IP, please try again later.'
-});
-app.use('/api/', limiter);
 
 // Swagger configuration
 const swaggerOptions = {
@@ -141,4 +135,4 @@ app.listen(PORT, () => {
   console.log('   ✅ Modular architecture');
 });
 
-export default app; 
+export default app;

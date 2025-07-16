@@ -13,7 +13,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
-const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const cors_1 = __importDefault(require("cors"));
 const swagger_ui_express_1 = __importDefault(require("swagger-ui-express"));
 const swagger_jsdoc_1 = __importDefault(require("swagger-jsdoc"));
@@ -63,13 +62,6 @@ app.use(express_1.default.urlencoded({ extended: true }));
 // Serve static files
 app.use(express_1.default.static(path_1.default.join(__dirname, "../../frontend", "dist")));
 app.use(express_1.default.static('public'));
-// Rate limiting
-const limiter = (0, express_rate_limit_1.default)({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 200,
-    message: 'Too many requests from this IP, please try again later.'
-});
-app.use('/api/', limiter);
 // Swagger configuration
 const swaggerOptions = {
     definition: {
