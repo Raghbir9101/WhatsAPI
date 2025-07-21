@@ -2,6 +2,7 @@ import { MessageMedia } from 'whatsapp-web.js';
 import fs from 'fs';
 import { WhatsAppInstance, Message, User } from '../models';
 import { formatPhoneNumber } from '../utils/helpers';
+import FileUploadController from './uploadController';
 
 // const sendMessageUnified = async (req, res) => {
 //   const { instanceId, to, message, mediaUrl, caption = '' } = req.body;
@@ -186,10 +187,22 @@ const sendMessageUnified = async (req, res) => {
     let messageContent = {};
     let responseData = {};
 
+    let fileUrl = null;
+    let fileName = null;
+
     // Determine message type and send accordingly
     if (req.file) {
-      // File upload - send media from file
-      const media = MessageMedia.fromFilePath(req.file.path);
+      // File upload - upload to Cloudinary and send media from file
+      const base64String = req.file.buffer.toString('base64');
+      const mimeType = req.file.mimetype;
+      const base64File = `data:${mimeType};base64,${base64String}`;
+      
+      // Upload to Cloudinary
+      fileUrl = await FileUploadController.uploadFile(base64File, req.file.originalname);
+      fileName = req.file.originalname;
+
+      // Create media from buffer since we're using memory storage
+      const media = new MessageMedia(mimeType, base64String, fileName);
       sentMessage = await client.sendMessage(chatId, media, { caption });
 
       messageType = req.file.mimetype.startsWith('image/') ? 'image' :
@@ -200,17 +213,19 @@ const sendMessageUnified = async (req, res) => {
         caption: caption,
         fileName: req.file.originalname,
         mimeType: req.file.mimetype,
-        fileSize: req.file.size
+        fileSize: req.file.size,
+        mediaUrl: fileUrl
       };
 
       responseData = {
         mediaType: req.file.mimetype,
         caption: caption,
-        fileName: req.file.originalname
+        fileName: req.file.originalname,
+        fileUrl: fileUrl
       };
 
     } else if (base64Data) {
-      // Base64 data - send media from base64 (full data URI format)
+      // Base64 data - upload to Cloudinary and send media from base64 (full data URI format)
 
       // Extract mime type from data URI (e.g., "data:image/png;base64,...")
       const dataUriMatch = base64Data.match(/^data:([^;]+);base64,(.+)$/);
@@ -231,7 +246,10 @@ const sendMessageUnified = async (req, res) => {
         return `file_${timestamp}_${randomStr}.${extension}`;
       };
 
-      const fileName = generateRandomFileName(mimeType);
+      fileName = generateRandomFileName(mimeType);
+
+      // Upload to Cloudinary
+      fileUrl = await FileUploadController.uploadFile(base64Data, fileName);
 
       const media = new MessageMedia(mimeType, base64Content, fileName);
       sentMessage = await client.sendMessage(chatId, media, { caption });
@@ -244,13 +262,15 @@ const sendMessageUnified = async (req, res) => {
         caption: caption,
         fileName: fileName,
         mimeType: mimeType,
+        mediaUrl: fileUrl,
         isBase64: true
       };
 
       responseData = {
         mediaType: mimeType,
         caption: caption,
-        fileName: fileName
+        fileName: fileName,
+        fileUrl: fileUrl
       };
 
     } else if (mediaUrl) {
@@ -262,6 +282,10 @@ const sendMessageUnified = async (req, res) => {
         media.mimetype?.startsWith('video/') ? 'video' :
           media.mimetype?.startsWith('audio/') ? 'audio' : 'document';
 
+      // Use the provided URL as fileUrl
+      fileUrl = mediaUrl;
+      fileName = mediaUrl.split('/').pop() || 'media_file';
+
       messageContent = {
         caption: caption,
         mediaUrl: mediaUrl,
@@ -271,7 +295,8 @@ const sendMessageUnified = async (req, res) => {
       responseData = {
         mediaUrl: mediaUrl,
         caption: caption,
-        mimeType: media.mimetype
+        mimeType: media.mimetype,
+        fileUrl: fileUrl
       };
 
     } else if (message) {
@@ -298,6 +323,9 @@ const sendMessageUnified = async (req, res) => {
       type: messageType,
       content: messageContent,
       status: 'sent',
+      source: 'api', // Mark messages from sendMessageUnified as API messages
+      fileUrl: fileUrl, // Store the file URL for frontend display
+      fileName: fileName, // Store the file name
       timestamp: new Date()
     });
 
@@ -380,6 +408,7 @@ const sendMessage = async (req, res) => {
         text: message
       },
       status: 'sent',
+      source: 'frontend', // Mark as frontend message
       timestamp: new Date()
     });
 
@@ -453,6 +482,11 @@ const sendMedia = async (req, res) => {
       req.file.mimetype.startsWith('video/') ? 'video' :
         req.file.mimetype.startsWith('audio/') ? 'audio' : 'document';
 
+    // Upload file to Cloudinary for storage
+    const base64String = req.file.buffer.toString('base64');
+    const base64File = `data:${req.file.mimetype};base64,${base64String}`;
+    const cloudinaryUrl = await FileUploadController.uploadFile(base64File, req.file.originalname);
+
     // Store outgoing media message in database
     const messageRecord = new Message({
       messageId: sentMessage.id._serialized,
@@ -469,6 +503,9 @@ const sendMedia = async (req, res) => {
         fileSize: req.file.size
       },
       status: 'sent',
+      source: 'frontend', // Mark as frontend message
+      fileUrl: cloudinaryUrl, // Store the file URL for frontend display
+      fileName: req.file.originalname, // Store the file name
       timestamp: new Date()
     });
 
@@ -555,6 +592,9 @@ const sendMediaUrl = async (req, res) => {
         mimeType: media.mimetype
       },
       status: 'sent',
+      source: 'frontend', // Mark as frontend message
+      fileUrl: mediaUrl, // Use the media URL as the file URL for display
+      fileName: mediaUrl.split('/').pop() || 'media_file', // Extract filename from URL
       timestamp: new Date()
     });
 
@@ -634,6 +674,7 @@ const getMessages = async (req, res) => {
     instanceId,
     direction,
     type,
+    source,
     search,
     from,
     to,
@@ -671,12 +712,35 @@ const getMessages = async (req, res) => {
       query.to = new RegExp(to, 'i');
     }
 
+    // Handle search and source filters properly
+    const andConditions = [];
+    
+    if (source && source !== 'all') {
+      // Handle case where source field might not exist for older messages
+      if (source === 'frontend') {
+        andConditions.push({
+          $or: [
+            { source: 'frontend' },
+            { source: { $exists: false } } // Include messages without source field (default to frontend)
+          ]
+        });
+      } else {
+        andConditions.push({ source: source });
+      }
+    }
+
     if (search) {
-      query.$or = [
-        { 'content.text': new RegExp(search, 'i') },
-        { 'content.caption': new RegExp(search, 'i') },
-        { contactName: new RegExp(search, 'i') }
-      ];
+      andConditions.push({
+        $or: [
+          { 'content.text': new RegExp(search, 'i') },
+          { 'content.caption': new RegExp(search, 'i') },
+          { contactName: new RegExp(search, 'i') }
+        ]
+      });
+    }
+
+    if (andConditions.length > 0) {
+      query.$and = andConditions;
     }
 
     if (startDate || endDate) {

@@ -53,66 +53,76 @@ const getUserStats = (req, res) => __awaiter(void 0, void 0, void 0, function* (
 exports.getUserStats = getUserStats;
 // Get message statistics
 const getMessageStats = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const user = req.user;
-    const { instanceId, days = 30 } = req.query;
     try {
-        const query = { userId: user._id };
-        if (instanceId) {
-            const instance = yield models_1.WhatsAppInstance.findOne({ instanceId, userId: user._id });
-            if (!instance) {
-                return res.status(404).json({ error: 'WhatsApp instance not found' });
-            }
+        const { instanceId, source, days = 30 } = req.query;
+        const userId = req.user.id;
+        const query = { userId };
+        if (instanceId)
             query.instanceId = instanceId;
-        }
+        if (source)
+            query.source = source;
         const startDate = new Date();
-        startDate.setDate(startDate.getDate() - parseInt(days));
-        query.timestamp = { $gte: startDate };
-        const [totalMessages, incomingMessages, outgoingMessages, messagesByType, messagesByDay] = yield Promise.all([
-            models_1.Message.countDocuments(query),
-            models_1.Message.countDocuments(Object.assign(Object.assign({}, query), { direction: 'incoming' })),
-            models_1.Message.countDocuments(Object.assign(Object.assign({}, query), { direction: 'outgoing' })),
-            models_1.Message.aggregate([
-                { $match: query },
-                { $group: { _id: '$type', count: { $sum: 1 } } }
-            ]),
-            models_1.Message.aggregate([
-                { $match: query },
-                {
-                    $group: {
-                        _id: {
-                            $dateToString: { format: '%Y-%m-%d', date: '$timestamp' }
-                        },
-                        count: { $sum: 1 },
-                        incoming: {
-                            $sum: { $cond: [{ $eq: ['$direction', 'incoming'] }, 1, 0] }
-                        },
-                        outgoing: {
-                            $sum: { $cond: [{ $eq: ['$direction', 'outgoing'] }, 1, 0] }
-                        }
+        startDate.setDate(startDate.getDate() - days);
+        // Get total message counts
+        const totalMessages = yield models_1.Message.countDocuments(query);
+        const incomingMessages = yield models_1.Message.countDocuments(Object.assign(Object.assign({}, query), { direction: 'incoming' }));
+        const outgoingMessages = yield models_1.Message.countDocuments(Object.assign(Object.assign({}, query), { direction: 'outgoing' }));
+        // Get messages by source
+        const apiMessages = yield models_1.Message.countDocuments(Object.assign(Object.assign({}, query), { source: 'api' }));
+        const frontendMessages = yield models_1.Message.countDocuments(Object.assign(Object.assign({}, query), { source: 'frontend' }));
+        // Get messages by type
+        const messagesByType = yield models_1.Message.aggregate([
+            { $match: query },
+            { $group: { _id: '$type', count: { $sum: 1 } } },
+            { $project: { type: '$_id', count: 1, _id: 0 } }
+        ]);
+        const messagesByTypeObj = {};
+        messagesByType.forEach(item => {
+            messagesByTypeObj[item.type] = item.count;
+        });
+        // Get daily stats
+        const messagesByDay = yield models_1.Message.aggregate([
+            {
+                $match: Object.assign(Object.assign({}, query), { timestamp: { $gte: startDate } })
+            },
+            {
+                $group: {
+                    _id: {
+                        $dateToString: { format: '%Y-%m-%d', date: '$timestamp' }
+                    },
+                    total: { $sum: 1 },
+                    incoming: {
+                        $sum: { $cond: [{ $eq: ['$direction', 'incoming'] }, 1, 0] }
+                    },
+                    outgoing: {
+                        $sum: { $cond: [{ $eq: ['$direction', 'outgoing'] }, 1, 0] }
                     }
-                },
-                { $sort: { _id: 1 } }
-            ])
+                }
+            },
+            { $sort: { _id: 1 } },
+            {
+                $project: {
+                    date: '$_id',
+                    total: 1,
+                    incoming: 1,
+                    outgoing: 1,
+                    _id: 0
+                }
+            }
         ]);
         res.json({
             totalMessages,
             incomingMessages,
             outgoingMessages,
-            messagesByType: messagesByType.reduce((acc, item) => {
-                acc[item._id] = item.count;
-                return acc;
-            }, {}),
-            messagesByDay: messagesByDay.map(day => ({
-                date: day._id,
-                total: day.count,
-                incoming: day.incoming,
-                outgoing: day.outgoing
-            }))
+            apiMessages,
+            frontendMessages,
+            messagesByType: messagesByTypeObj,
+            messagesByDay
         });
     }
     catch (error) {
-        console.error('Get message stats error:', error);
-        res.status(500).json({ error: 'Failed to retrieve message statistics' });
+        console.error('Error getting message stats:', error);
+        res.status(500).json({ error: 'Failed to get message stats' });
     }
 });
 exports.getMessageStats = getMessageStats;

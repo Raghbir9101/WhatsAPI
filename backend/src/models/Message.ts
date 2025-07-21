@@ -1,37 +1,16 @@
 import mongoose from 'mongoose';
 
 const messageSchema = new mongoose.Schema({
-  messageId: {
-    type: String,
-    required: true,
-    unique: true
-  },
-  instanceId: {
-    type: String,
-    required: true
-  },
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  direction: {
-    type: String,
-    enum: ['incoming', 'outgoing'],
-    required: true
-  },
-  from: {
-    type: String,
-    required: true
-  },
-  to: {
-    type: String,
-    required: true
-  },
-  type: {
-    type: String,
-    enum: ['text', 'image', 'video', 'audio', 'document', 'sticker', 'location', 'contact'],
-    default: 'text'
+  messageId: { type: String, required: true },
+  instanceId: { type: String, required: true },
+  userId: { type: String, required: true },
+  direction: { type: String, enum: ['incoming', 'outgoing'], required: true },
+  from: { type: String, required: true },
+  to: { type: String, required: true },
+  type: { 
+    type: String, 
+    enum: ['text', 'image', 'video', 'audio', 'document', 'sticker', 'location', 'contact'], 
+    required: true 
   },
   content: {
     text: String,
@@ -41,43 +20,33 @@ const messageSchema = new mongoose.Schema({
     mimeType: String,
     fileSize: Number
   },
-  isGroup: {
-    type: Boolean,
-    default: false
-  },
+  isGroup: { type: Boolean, default: false },
   groupId: String,
   contactName: String,
-  status: {
-    type: String,
-    enum: ['sent', 'delivered', 'read', 'failed', 'scheduled', 'cancelled'],
-    default: 'sent'
+  status: { 
+    type: String, 
+    enum: ['sent', 'delivered', 'read', 'failed'], 
+    default: 'sent' 
   },
-  campaignId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'BulkCampaign',
-    default: null
+  campaignId: String,
+  templateId: String,
+  source: { 
+    type: String, 
+    enum: ['api', 'frontend'], 
+    default: 'frontend' 
   },
-  templateId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'MessageTemplate',
-    default: null
-  },
-  timestamp: {
-    type: Date,
-    default: Date.now
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
+  fileUrl: String,
+  fileName: String,
+  timestamp: { type: Date, default: Date.now },
+}, { 
+  timestamps: true 
 });
 
-// Indexes for better performance
+// Add indexes for better query performance
 messageSchema.index({ instanceId: 1, timestamp: -1 });
 messageSchema.index({ userId: 1, timestamp: -1 });
-messageSchema.index({ direction: 1, timestamp: -1 });
 messageSchema.index({ from: 1, to: 1, timestamp: -1 });
+messageSchema.index({ campaignId: 1 });
+messageSchema.index({ source: 1 });
 
-const Message = mongoose.model('Message', messageSchema);
-
-export default Message; 
+export default mongoose.model('Message', messageSchema); 

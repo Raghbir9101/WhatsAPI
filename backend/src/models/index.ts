@@ -9,6 +9,8 @@ import IndiaMartLog from './IndiaMartLog';
 import LeadSource from './LeadSource';
 import LeadData from './LeadData';
 import Package from './Package';
+import Flow from './Flow';
+import ConversationSession from './ConversationSession';
 
 export {
   User,
@@ -21,5 +23,7 @@ export {
   IndiaMartLog,
   LeadSource,
   LeadData,
-  Package
+  Package,
+  Flow,
+  ConversationSession
 };

@@ -8,7 +8,7 @@ class SchedulerService {
   // Process scheduled messages
   async processScheduledMessages() {
     try {
-      console.log('Processing scheduled messages...');
+      // console.log('Processing scheduled messages...');
       
       // Find all messages that are scheduled and past their scheduled time
       const overdueMessages = await Message.find({
@@ -16,7 +16,7 @@ class SchedulerService {
         timestamp: { $lte: new Date() }
       }).populate('userId');
 
-      console.log(`Found ${overdueMessages.length} overdue scheduled messages`);
+      // console.log(`Found ${overdueMessages.length} overdue scheduled messages`);
 
       for (const message of overdueMessages) {
         await this.processScheduledMessage(message);
@@ -25,7 +25,7 @@ class SchedulerService {
       // Schedule future messages
       await this.scheduleFutureMessages();
       
-      console.log('Finished processing scheduled messages');
+      // console.log('Finished processing scheduled messages');
     } catch (error) {
       console.error('Error processing scheduled messages:', error);
     }
@@ -51,9 +51,9 @@ class SchedulerService {
           WhatsAppInstance.findOneAndUpdate({ instanceId: message.instanceId }, { $inc: { messagesSent: 1 } })
         ]);
 
-        console.log(`Sent overdue scheduled message to ${message.to}`);
+        // console.log(`Sent overdue scheduled message to ${message.to}`);
       } else {
-        console.log(`WhatsApp client not ready for user ${message.userId._id}, instance ${message.instanceId}`);
+        // console.log(`WhatsApp client not ready for user ${message.userId._id}, instance ${message.instanceId}`);
         // Mark as failed if client is not available
         await Message.findByIdAndUpdate(message._id, {
           status: 'failed'
@@ -73,7 +73,7 @@ class SchedulerService {
       timestamp: { $gt: new Date() }
     }).populate('userId');
 
-    console.log(`Found ${futureMessages.length} future scheduled messages`);
+    // console.log(`Found ${futureMessages.length} future scheduled messages`);
 
     for (const message of futureMessages) {
       const delay = new Date(message.timestamp).getTime() - Date.now();

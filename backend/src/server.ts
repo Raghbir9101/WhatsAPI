@@ -1,5 +1,4 @@
 import express from 'express';
-import rateLimit from 'express-rate-limit';
 import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
 import swaggerJsdoc from 'swagger-jsdoc';
@@ -15,6 +14,7 @@ import indiaMartScheduler from './services/IndiaMartScheduler';
 import { createRequiredDirectories } from './utils/helpers';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { runSeed } from './utils/seed';
+import { migrateMessagesSource } from './utils/migrateMessages';
 // Import routes
 import apiRoutes from './routes';
 
@@ -36,6 +36,13 @@ app.locals.indiaMartScheduler = indiaMartScheduler;
 
 // Connect to database
 connectDB().then(async () => {
+  // Run migration for message source field
+  try {
+    await migrateMessagesSource();
+  } catch (error) {
+    console.error('Migration failed, but continuing startup:', error);
+  }
+  
   // Run seed data
   await runSeed();
   

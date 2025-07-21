@@ -27,6 +27,7 @@ const IndiaMartScheduler_1 = __importDefault(require("./services/IndiaMartSchedu
 const helpers_1 = require("./utils/helpers");
 const errorHandler_1 = require("./middleware/errorHandler");
 const seed_1 = require("./utils/seed");
+const migrateMessages_1 = require("./utils/migrateMessages");
 // Import routes
 const routes_1 = __importDefault(require("./routes"));
 const app = (0, express_1.default)();
@@ -43,6 +44,13 @@ app.locals.schedulerService = schedulerService;
 app.locals.indiaMartScheduler = IndiaMartScheduler_1.default;
 // Connect to database
 (0, database_1.connectDB)().then(() => __awaiter(void 0, void 0, void 0, function* () {
+    // Run migration for message source field
+    try {
+        yield (0, migrateMessages_1.migrateMessagesSource)();
+    }
+    catch (error) {
+        console.error('Migration failed, but continuing startup:', error);
+    }
     // Run seed data
     yield (0, seed_1.runSeed)();
     // Start schedulers after database connection

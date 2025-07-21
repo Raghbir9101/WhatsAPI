@@ -162,6 +162,7 @@ const sendGroupMessage = (req, res) => __awaiter(void 0, void 0, void 0, functio
             isGroup: true,
             groupId: groupId,
             status: 'sent',
+            source: 'frontend', // Mark as frontend message
             timestamp: new Date()
         });
         yield Promise.all([

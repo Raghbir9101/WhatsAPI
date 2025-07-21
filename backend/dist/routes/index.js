@@ -27,6 +27,8 @@ const templates_1 = __importDefault(require("./templates"));
 const reports_1 = __importDefault(require("./reports"));
 const indiamart_1 = __importDefault(require("./indiamart"));
 const admin_1 = __importDefault(require("./admin"));
+const upload_1 = __importDefault(require("./upload"));
+const flows_1 = __importDefault(require("./flows"));
 // Import controllers for backward compatibility routes
 const messagesController_1 = require("../controllers/messagesController");
 const models_1 = require("../models");
@@ -76,4 +78,6 @@ router.use('/templates', templates_1.default);
 router.use('/reports', reports_1.default);
 router.use('/indiamart', indiamart_1.default);
 router.use('/admin', admin_1.default);
+router.use('/upload', upload_1.default);
+router.use('/flows', flows_1.default);
 exports.default = router;

@@ -287,10 +287,12 @@ const sendTemplate = (req, res) => __awaiter(void 0, void 0, void 0, function* (
             instanceId,
             from: client.info.wid.user,
             to,
-            message,
-            templateId: template._id,
+            type: 'text',
+            content: { text: message },
+            templateId: template._id.toString(),
             messageId: result.id.id,
             status: 'sent',
+            source: 'frontend', // Mark template messages as frontend messages
             timestamp: new Date()
         });
         yield messageDoc.save();

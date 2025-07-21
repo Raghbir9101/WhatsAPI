@@ -4,16 +4,20 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import { WhatsAppInstance, Message } from '../models';
+import FileUploadController from '../controllers/uploadController';
+import FlowEngine from './FlowEngine';
 
 class WhatsAppManager {
   clients: Map<string, Client>;
   clientStatus: Map<string, string>;
   qrCodes: Map<string, any>;
+  flowEngine: FlowEngine;
 
   constructor() {
     this.clients = new Map();
     this.clientStatus = new Map();
     this.qrCodes = new Map();
+    this.flowEngine = new FlowEngine(this);
   }
 
   async createClient(userId, instanceId, instanceName) {
@@ -239,13 +243,21 @@ class WhatsAppManager {
               message.type === 'document' ? 'document' : 'text') : 'text';
 
       let content = { text: message.body || '' } as any;
+      let fileUrl = null;
+      let fileName = null;
 
       if (message.hasMedia) {
         try {
           const media = await message.downloadMedia();
           content.caption = message.body || '';
           content.mimeType = media.mimetype;
-          content.fileName = media.filename || 'media_file';
+          fileName = media.filename || `incoming_${Date.now()}_${messageType}`;
+          content.fileName = fileName;
+
+          // Upload to Cloudinary for storage
+          const base64File = `data:${media.mimetype};base64,${media.data}`;
+          fileUrl = await FileUploadController.uploadFile(base64File, fileName);
+          content.mediaUrl = fileUrl;
         } catch (mediaError) {
           console.error('Error downloading media:', mediaError);
         }
@@ -253,6 +265,14 @@ class WhatsAppManager {
 
       const contact = await message.getContact();
       const chat = await message.getChat();
+
+      // // Check if message already exists to prevent duplicates
+      // const existingMessage = await Message.findOne({ messageId: message.id._serialized });
+      
+      // if (existingMessage) {
+      //   console.log(`Message already exists, skipping: ${message.id._serialized}`);
+      //   return;
+      // }
 
       const messageRecord = new Message({
         messageId: message.id._serialized,
@@ -267,11 +287,26 @@ class WhatsAppManager {
         groupId: chat.isGroup ? chat.id._serialized : null,
         contactName: contact.name || contact.pushname || contact.number,
         timestamp: new Date(message.timestamp * 1000),
-        status: 'delivered'
+        status: 'delivered',
+        source: 'frontend', // Incoming messages are typically from frontend interactions
+        fileUrl: fileUrl, // Store the file URL for frontend display
+        fileName: fileName // Store the file name
       });
 
-      await messageRecord.save();
-      console.log(`Incoming message stored for instance ${instanceName}`);
+      try {
+        await messageRecord.save();
+        console.log(`Incoming message stored for instance ${instanceName}`);
+        
+        // Check for flow triggers after message is saved
+        await this.flowEngine.checkTriggers(message, instanceId, instance.userId.toString());
+      } catch (error) {
+        if (error.code === 11000) {
+          // Duplicate key error - message already exists
+          console.log(`Duplicate message detected and skipped: ${message.id._serialized}`);
+          return;
+        }
+        throw error; // Re-throw if it's not a duplicate key error
+      }
     } catch (error) {
       console.error('Error storing incoming message:', error);
     }

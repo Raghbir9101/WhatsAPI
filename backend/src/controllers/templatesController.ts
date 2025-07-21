@@ -309,10 +309,12 @@ const sendTemplate = async (req, res) => {
       instanceId,
       from: client.info.wid.user,
       to,
-      message,
-      templateId: template._id,
+      type: 'text',
+      content: { text: message },
+      templateId: template._id.toString(),
       messageId: result.id.id,
       status: 'sent',
+      source: 'frontend', // Mark template messages as frontend messages
       timestamp: new Date()
     });
     await messageDoc.save();

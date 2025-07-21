@@ -314,6 +314,8 @@ function processBulkCampaign(campaign, user, client, whatsappManager) {
                         type: 'text',
                         content: { text: processedMessage },
                         status: 'sent',
+                        source: 'api', // Mark bulk campaign messages as API messages
+                        campaignId: campaign._id.toString(),
                         timestamp: new Date()
                     });
                     yield messageRecord.save();

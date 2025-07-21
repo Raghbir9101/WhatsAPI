@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Package = exports.LeadData = exports.LeadSource = exports.IndiaMartLog = exports.IndiaMartConfig = exports.IndiaMartLead = exports.BulkCampaign = exports.MessageTemplate = exports.Message = exports.WhatsAppInstance = exports.User = void 0;
+exports.ConversationSession = exports.Flow = exports.Package = exports.LeadData = exports.LeadSource = exports.IndiaMartLog = exports.IndiaMartConfig = exports.IndiaMartLead = exports.BulkCampaign = exports.MessageTemplate = exports.Message = exports.WhatsAppInstance = exports.User = void 0;
 const User_1 = __importDefault(require("./User"));
 exports.User = User_1.default;
 const WhatsAppInstance_1 = __importDefault(require("./WhatsAppInstance"));
@@ -26,3 +26,7 @@ const LeadData_1 = __importDefault(require("./LeadData"));
 exports.LeadData = LeadData_1.default;
 const Package_1 = __importDefault(require("./Package"));
 exports.Package = Package_1.default;
+const Flow_1 = __importDefault(require("./Flow"));
+exports.Flow = Flow_1.default;
+const ConversationSession_1 = __importDefault(require("./ConversationSession"));
+exports.ConversationSession = ConversationSession_1.default;

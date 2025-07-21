@@ -72,6 +72,9 @@ export interface Message {
   status: 'sent' | 'delivered' | 'read' | 'failed';
   campaignId?: string;
   templateId?: string;
+  source?: 'api' | 'frontend'; // New field to track message source
+  fileUrl?: string; // New field for file attachment URL
+  fileName?: string; // New field for file name
   timestamp: string;
   createdAt: string;
 }
@@ -395,6 +398,7 @@ class ApiClient {
     instanceId?: string;
     direction?: 'incoming' | 'outgoing' | 'all';
     type?: string;
+    source?: string;
     search?: string;
     from?: string;
     to?: string;
@@ -421,15 +425,18 @@ class ApiClient {
     }>(`/messages?${queryParams.toString()}`);
   }
 
-  async getMessageStats(instanceId?: string, days: number = 30) {
+  async getMessageStats(instanceId?: string, source?: string, days: number = 30) {
     const params = new URLSearchParams();
     if (instanceId) params.append('instanceId', instanceId);
+    if (source) params.append('source', source);
     params.append('days', days.toString());
 
     return this.request<{
       totalMessages: number;
       incomingMessages: number;
       outgoingMessages: number;
+      apiMessages: number;
+      frontendMessages: number;
       messagesByType: Record<string, number>;
       messagesByDay: {
         date: string;
@@ -1026,6 +1033,63 @@ class ApiClient {
         hasPrev: boolean;
       };
     }>(`/indiamart/logs?${queryParams.toString()}`);
+  }
+
+  // Flow APIs
+  async getFlows(instanceId?: string) {
+    const params = instanceId ? `?instanceId=${instanceId}` : '';
+    return this.request(`/flows${params}`);
+  }
+
+  async getFlow(flowId: string) {
+    return this.request(`/flows/${flowId}`);
+  }
+
+  async createFlow(flowData: {
+    instanceId: string;
+    name: string;
+    description?: string;
+    nodes: any[];
+    edges: any[];
+    isActive?: boolean;
+  }) {
+    return this.request('/flows', {
+      method: 'POST',
+      body: JSON.stringify(flowData)
+    });
+  }
+
+  async updateFlow(flowId: string, flowData: {
+    name?: string;
+    description?: string;
+    nodes?: any[];
+    edges?: any[];
+    isActive?: boolean;
+  }) {
+    return this.request(`/flows/${flowId}`, {
+      method: 'PUT',
+      body: JSON.stringify(flowData)
+    });
+  }
+
+  async deleteFlow(flowId: string) {
+    return this.request(`/flows/${flowId}`, { method: 'DELETE' });
+  }
+
+  async toggleFlowStatus(flowId: string) {
+    return this.request(`/flows/${flowId}/toggle`, { method: 'PATCH' });
+  }
+
+  async getFlowStats(instanceId?: string) {
+    const params = instanceId ? `?instanceId=${instanceId}` : '';
+    return this.request(`/flows/stats${params}`);
+  }
+
+  async testFlow(flowId: string, testData: { testMessage?: string; fromNumber?: string }) {
+    return this.request(`/flows/${flowId}/test`, {
+      method: 'POST',
+      body: JSON.stringify(testData)
+    });
   }
 }
 

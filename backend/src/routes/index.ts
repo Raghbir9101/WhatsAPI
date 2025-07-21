@@ -14,6 +14,8 @@ import templatesRoutes from './templates';
 import reportsRoutes from './reports';
 import indiamartRoutes from './indiamart';
 import adminRoutes from './admin';
+import uploadRoutes from './upload';
+import flowRoutes from './flows';
 
 // Import controllers for backward compatibility routes
 import { 
@@ -79,5 +81,7 @@ router.use('/templates', templatesRoutes);
 router.use('/reports', reportsRoutes);
 router.use('/indiamart', indiamartRoutes);
 router.use('/admin', adminRoutes);
+router.use('/upload', uploadRoutes);
+router.use('/flows', flowRoutes);
 
 export default router; 

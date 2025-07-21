@@ -20,6 +20,7 @@ import { Reports } from "./pages/Reports";
 import { Payment } from "./pages/Payment";
 import { Settings } from "./pages/Settings";
 import IndiaMART from "./pages/IndiaMART";
+import { Flows } from "./pages/Flows";
 import { AdminDashboard } from "./pages/admin/AdminDashboard";
 import { AdminClients } from "./pages/admin/AdminClients";
 import { AdminPackages } from "./pages/admin/AdminPackages";
@@ -93,6 +94,7 @@ const App = () => (
                 <Route path="messages" element={<Messages />} />
                 <Route path="message-history" element={<MessageHistory />} />
                 <Route path="groups" element={<Groups />} />
+                <Route path="flows" element={<Flows />} />
                 <Route path="schedule" element={<Schedule />} />
                 <Route path="reports" element={<Reports />} />
                 <Route path="indiamart" element={<IndiaMART />} />

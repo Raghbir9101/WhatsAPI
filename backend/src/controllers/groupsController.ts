@@ -171,6 +171,7 @@ const sendGroupMessage = async (req, res) => {
       isGroup: true,
       groupId: groupId,
       status: 'sent',
+      source: 'frontend', // Mark as frontend message
       timestamp: new Date()
     });
     

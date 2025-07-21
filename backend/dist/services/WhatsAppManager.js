@@ -18,11 +18,14 @@ const path_1 = __importDefault(require("path"));
 const os_1 = __importDefault(require("os"));
 const fs_1 = __importDefault(require("fs"));
 const models_1 = require("../models");
+const uploadController_1 = __importDefault(require("../controllers/uploadController"));
+const FlowEngine_1 = __importDefault(require("./FlowEngine"));
 class WhatsAppManager {
     constructor() {
         this.clients = new Map();
         this.clientStatus = new Map();
         this.qrCodes = new Map();
+        this.flowEngine = new FlowEngine_1.default(this);
     }
     createClient(userId, instanceId, instanceName) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -221,12 +224,19 @@ class WhatsAppManager {
                             message.type === 'audio' ? 'audio' :
                                 message.type === 'document' ? 'document' : 'text') : 'text';
                 let content = { text: message.body || '' };
+                let fileUrl = null;
+                let fileName = null;
                 if (message.hasMedia) {
                     try {
                         const media = yield message.downloadMedia();
                         content.caption = message.body || '';
                         content.mimeType = media.mimetype;
-                        content.fileName = media.filename || 'media_file';
+                        fileName = media.filename || `incoming_${Date.now()}_${messageType}`;
+                        content.fileName = fileName;
+                        // Upload to Cloudinary for storage
+                        const base64File = `data:${media.mimetype};base64,${media.data}`;
+                        fileUrl = yield uploadController_1.default.uploadFile(base64File, fileName);
+                        content.mediaUrl = fileUrl;
                     }
                     catch (mediaError) {
                         console.error('Error downloading media:', mediaError);
@@ -234,6 +244,12 @@ class WhatsAppManager {
                 }
                 const contact = yield message.getContact();
                 const chat = yield message.getChat();
+                // // Check if message already exists to prevent duplicates
+                // const existingMessage = await Message.findOne({ messageId: message.id._serialized });
+                // if (existingMessage) {
+                //   console.log(`Message already exists, skipping: ${message.id._serialized}`);
+                //   return;
+                // }
                 const messageRecord = new models_1.Message({
                     messageId: message.id._serialized,
                     instanceId: instanceId,
@@ -247,10 +263,25 @@ class WhatsAppManager {
                     groupId: chat.isGroup ? chat.id._serialized : null,
                     contactName: contact.name || contact.pushname || contact.number,
                     timestamp: new Date(message.timestamp * 1000),
-                    status: 'delivered'
+                    status: 'delivered',
+                    source: 'frontend', // Incoming messages are typically from frontend interactions
+                    fileUrl: fileUrl, // Store the file URL for frontend display
+                    fileName: fileName // Store the file name
                 });
-                yield messageRecord.save();
-                console.log(`Incoming message stored for instance ${instanceName}`);
+                try {
+                    yield messageRecord.save();
+                    console.log(`Incoming message stored for instance ${instanceName}`);
+                    // Check for flow triggers after message is saved
+                    yield this.flowEngine.checkTriggers(message, instanceId, instance.userId.toString());
+                }
+                catch (error) {
+                    if (error.code === 11000) {
+                        // Duplicate key error - message already exists
+                        console.log(`Duplicate message detected and skipped: ${message.id._serialized}`);
+                        return;
+                    }
+                    throw error; // Re-throw if it's not a duplicate key error
+                }
             }
             catch (error) {
                 console.error('Error storing incoming message:', error);

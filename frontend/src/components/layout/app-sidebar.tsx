@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Building2,
+  Workflow,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useUiStore } from '@/store/ui-store';
@@ -24,6 +25,7 @@ const navigation = [
   { name: 'Messages', href: '/messages', icon: MessageSquare },
   { name: 'Message History', href: '/message-history', icon: History },
   { name: 'Groups', href: '/groups', icon: Users },
+  { name: 'Flows', href: '/flows', icon: Workflow },
   { name: 'Schedule', href: '/schedule', icon: Calendar },
   { name: 'Reports', href: '/reports', icon: BarChart3 },
   { name: 'IndiaMART', href: '/indiamart', icon: Building2 },
