@@ -13,7 +13,8 @@ import {
   updatePackage,
   deletePackage,
   getSystemSettings,
-  updateSystemSettings
+  updateSystemSettings,
+  assignPackageToClient
 } from '../controllers/adminController';
 import { verifyAdmin, adminLogin } from '../middleware/admin';
 import { body, validationResult } from 'express-validator';
@@ -73,5 +74,10 @@ router.delete('/packages/:id', deletePackage);
 // System settings
 router.get('/settings', getSystemSettings);
 router.put('/settings', updateSystemSettings);
+
+// Client package assignment
+router.post('/clients/:id/assign-package', [
+  body('packageId').notEmpty().isString()
+], handleValidation, assignPackageToClient);
 
 export default router; 

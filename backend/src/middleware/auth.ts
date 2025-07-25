@@ -9,7 +9,7 @@ const verifyApiKey = async (req, res, next) => {
   }
   
   try {
-    const user = await User.findOne({ apiKey, isActive: true });
+    const user = await User.findOne({ apiKey, isActive: true }).lean();
     if (!user) {
       return res.status(401).json({ error: 'Invalid API key' });
     }

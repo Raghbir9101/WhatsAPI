@@ -1,11 +1,35 @@
 // Real API for admin operations
 
+export interface Package {
+  _id: string;
+  name: string;
+  displayName: string;
+  description: string;
+  price: number;
+  currency: string;
+  credits: number;
+  features: string[];
+  maxInstances: number;
+  supportLevel: string;
+  billingPeriod: string;
+  isActive: boolean;
+  validityDays?: number;
+}
+
+export interface AssignedPackage {
+  _id: string;
+  package: Package;
+  lastDate: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Client {
   id: string;
   email: string;
   name: string;
   company: string;
-  package: 'BASIC' | 'PREMIUM' | 'ENTERPRISE';
+  packageType: string;
   validityDate: string;
   creditsTotal: number;
   creditsUsed: number;
@@ -15,15 +39,17 @@ export interface Client {
   createdAt: string;
   lastLogin: string;
   whatsappInstances: number;
+  assignedPackages: AssignedPackage[];
 }
 
-export interface Package {
-  id: string;
-  name: string;
-  credits: number;
-  price: number;
-  validityDays: number;
-  features: string[];
+export interface ClientResponse {
+  clients: Client[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
 }
 
 // API base URL
@@ -77,9 +103,14 @@ export const adminApi = {
   },
 
   // Client management
-  getClients: async (): Promise<Client[]> => {
-    const response = await apiRequest('/admin/clients');
-    return response.clients || [];
+  getClients: async (page = 1, limit = 20, search = ''): Promise<ClientResponse> => {
+    const queryParams = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+      ...(search && { search })
+    });
+    const response = await apiRequest(`/admin/clients?${queryParams}`);
+    return response;
   },
 
   getClient: async (id: string): Promise<Client | null> => {
@@ -108,6 +139,13 @@ export const adminApi = {
     await apiRequest(`/admin/clients/${id}/credits`, {
       method: 'PUT',
       body: JSON.stringify({ credits }),
+    });
+  },
+
+  assignPackageToClient: async (clientId: string, packageId: string): Promise<void> => {
+    await apiRequest(`/admin/clients/${clientId}/assign-package`, {
+      method: 'POST',
+      body: JSON.stringify({ packageId }),
     });
   },
 

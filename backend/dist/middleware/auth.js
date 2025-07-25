@@ -18,7 +18,7 @@ const verifyApiKey = (req, res, next) => __awaiter(void 0, void 0, void 0, funct
         return res.status(401).json({ error: 'API key required' });
     }
     try {
-        const user = yield models_1.User.findOne({ apiKey, isActive: true });
+        const user = yield models_1.User.findOne({ apiKey, isActive: true }).lean();
         if (!user) {
             return res.status(401).json({ error: 'Invalid API key' });
         }

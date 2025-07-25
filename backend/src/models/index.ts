@@ -11,6 +11,8 @@ import LeadData from './LeadData';
 import Package from './Package';
 import Flow from './Flow';
 import ConversationSession from './ConversationSession';
+import AssignedPackages from './assignedPackages';
+import Usage from './usage';
 
 export {
   User,
@@ -25,5 +27,7 @@ export {
   LeadData,
   Package,
   Flow,
-  ConversationSession
+  ConversationSession,
+  AssignedPackages,
+  Usage
 };
