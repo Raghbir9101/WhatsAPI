@@ -17,6 +17,7 @@ const bcrypt_1 = __importDefault(require("bcrypt"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const models_1 = require("../models");
 const helpers_1 = require("../utils/helpers");
+const assignedPackages_1 = __importDefault(require("../models/assignedPackages"));
 // User registration
 const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { email, password, name, company } = req.body;
@@ -35,14 +36,20 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             password: hashedPassword,
             apiKey
         });
+        const newAssignedPackage = new assignedPackages_1.default({
+            packageId: "6870f43c564218b06c96fff2",
+            userId: user._id
+        });
         yield user.save();
+        yield newAssignedPackage.save();
         res.status(201).json({
             message: 'User registered successfully',
             userId: user._id,
             apiKey: user.apiKey,
             email: user.email,
             name: user.name,
-            company: user.company
+            company: user.company,
+            assignedPackages: newAssignedPackage
         });
     }
     catch (error) {
@@ -55,7 +62,7 @@ exports.register = register;
 const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { email, password } = req.body;
     try {
-        const user = yield models_1.User.findOne({ email, isActive: true });
+        const user = yield models_1.User.findOne({ email, isActive: true }).populate('assignedPackages.package');
         if (!user || !(yield bcrypt_1.default.compare(password, user.password))) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
@@ -66,7 +73,8 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             userId: user._id,
             email: user.email,
             name: user.name,
-            company: user.company
+            company: user.company,
+            package: user.assignedPackages
         });
     }
     catch (error) {

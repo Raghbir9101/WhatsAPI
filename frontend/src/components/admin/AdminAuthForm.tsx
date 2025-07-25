@@ -8,8 +8,8 @@ import { useAdminAuth } from '@/lib/admin-auth';
 import { toast } from '@/hooks/use-toast';
 
 export function AdminAuthForm() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('admin@ceoitbox.com');
+  const [password, setPassword] = useState('admin123');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAdminAuth();

@@ -57,4 +57,8 @@ router.delete('/packages/:id', adminController_1.deletePackage);
 // System settings
 router.get('/settings', adminController_1.getSystemSettings);
 router.put('/settings', adminController_1.updateSystemSettings);
+// Client package assignment
+router.post('/clients/:id/assign-package', [
+    (0, express_validator_1.body)('packageId').notEmpty().isString()
+], handleValidation, adminController_1.assignPackageToClient);
 exports.default = router;

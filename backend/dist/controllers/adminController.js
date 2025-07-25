@@ -9,7 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateSystemSettings = exports.getSystemSettings = exports.deletePackage = exports.updatePackage = exports.createPackage = exports.getPackages = exports.addCredits = exports.extendClientValidity = exports.updateClientStatus = exports.getClient = exports.getClients = exports.getAdminStats = void 0;
+exports.assignPackageToClient = exports.updateSystemSettings = exports.getSystemSettings = exports.deletePackage = exports.updatePackage = exports.createPackage = exports.getPackages = exports.addCredits = exports.extendClientValidity = exports.updateClientStatus = exports.getClient = exports.getClients = exports.getAdminStats = void 0;
 const models_1 = require("../models");
 // Get admin statistics
 const getAdminStats = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -101,29 +101,53 @@ const getClients = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         }
         const skip = (Number(page) - 1) * Number(limit);
         const totalClients = yield models_1.User.countDocuments(query);
+        // Get users without population since assignedPackages uses userId reference
         const clients = yield models_1.User.find(query)
             .select('-password -apiKey')
-            .sort({ createdAt: -1 })
+            .sort({ createdAt: 1 })
             .skip(skip)
-            .limit(Number(limit));
+            .limit(Number(limit))
+            .exec();
+        // Manually fetch assignedPackages for each user since the relationship is userId-based
+        const clientsWithPackages = yield Promise.all(clients.map((client) => __awaiter(void 0, void 0, void 0, function* () {
+            const assignedPackages = yield models_1.AssignedPackages.find({ _id: { $in: client.assignedPackages } })
+                .populate('package')
+                .exec();
+            return Object.assign(Object.assign({}, client.toObject()), { assignedPackages });
+        })));
         // Get WhatsApp instances count for each client
-        const clientsWithInstances = yield Promise.all(clients.map((client) => __awaiter(void 0, void 0, void 0, function* () {
+        const clientsWithInstances = yield Promise.all(clientsWithPackages.map((client) => __awaiter(void 0, void 0, void 0, function* () {
             const whatsappInstances = yield models_1.WhatsAppInstance.countDocuments({ userId: client._id });
+            // Find the current active package
+            const currentPackage = yield models_1.AssignedPackages.findOne({
+                _id: { $in: client.assignedPackages },
+                lastDate: { $gte: new Date() }
+            }).populate('package');
+            // Calculate credits remaining by counting usage entries for the current package
+            const creditsUsed = currentPackage
+                ? yield models_1.Usage.countDocuments({
+                    userId: client._id,
+                    assignedPackage: currentPackage._id
+                })
+                : 0;
+            const creditsTotal = currentPackage ? currentPackage.package.credits : 0;
+            const creditsRemaining = Math.max(0, creditsTotal - creditsUsed);
             return {
                 id: client._id,
                 email: client.email,
                 name: client.name,
                 company: client.company,
-                package: client.packageType,
+                packageType: client.packageType,
                 validityDate: client.validityDate.toISOString().split('T')[0],
-                creditsTotal: client.creditsTotal,
-                creditsUsed: client.creditsUsed,
-                creditsRemaining: client.creditsTotal - client.creditsUsed,
+                creditsTotal,
+                creditsUsed,
+                creditsRemaining,
                 messagesSent: client.messagesSent,
                 status: client.status,
                 createdAt: client.createdAt.toISOString().split('T')[0],
                 lastLogin: client.lastLogin.toISOString().split('T')[0],
-                whatsappInstances
+                whatsappInstances,
+                assignedPackages: (client.assignedPackages)
             };
         })));
         res.json({
@@ -142,6 +166,26 @@ const getClients = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
     }
 });
 exports.getClients = getClients;
+// loop through all users, create a new assignedPackages with package of id: 6870f43c564218b06c96fff2, retrieve it's _id and save it in user's assignedPackage array of object ids
+// async function looper(){
+//   const allUsers = await User.find({})
+//   const packages = await Package.findById("6870f43c564218b06c96fff2")
+//   let today = new Date()
+//   //add package validity days to today's date i.e if 256 days then add 256 days to today's date
+//   let lastDate = new Date(today.getTime() + packages.validityDays * 24 * 60 * 60 * 1000)
+//   console.log(lastDate)
+//   allUsers.map(async (el)=>{
+//     let user = el
+//     const newPackage = new AssignedPackages({
+//       package:"6870f43c564218b06c96fff2",
+//       lastDate:lastDate
+//     })
+//     const obj = await newPackage.save();
+//     user.assignedPackages = [obj._id];
+//     await user.save();
+//   })
+// }
+// looper()
 // Get client by ID
 const getClient = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -151,6 +195,20 @@ const getClient = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             return res.status(404).json({ error: 'Client not found' });
         }
         const whatsappInstances = yield models_1.WhatsAppInstance.countDocuments({ userId: client._id });
+        // Find the current active package
+        const currentPackage = yield models_1.AssignedPackages.findOne({
+            _id: { $in: client.assignedPackages },
+            lastDate: { $gte: new Date() }
+        }).populate('package');
+        // Calculate credits remaining by counting usage entries for the current package
+        const creditsUsed = currentPackage
+            ? yield models_1.Usage.countDocuments({
+                userId: client._id,
+                assignedPackage: currentPackage._id
+            })
+            : 0;
+        const creditsTotal = currentPackage ? currentPackage.package.credits : 0;
+        const creditsRemaining = Math.max(0, creditsTotal - creditsUsed);
         res.json({
             id: client._id,
             email: client.email,
@@ -158,9 +216,9 @@ const getClient = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             company: client.company,
             package: client.packageType,
             validityDate: client.validityDate.toISOString().split('T')[0],
-            creditsTotal: client.creditsTotal,
-            creditsUsed: client.creditsUsed,
-            creditsRemaining: client.creditsTotal - client.creditsUsed,
+            creditsTotal,
+            creditsUsed,
+            creditsRemaining,
             messagesSent: client.messagesSent,
             status: client.status,
             createdAt: client.createdAt.toISOString().split('T')[0],
@@ -350,3 +408,41 @@ const updateSystemSettings = (req, res) => __awaiter(void 0, void 0, void 0, fun
     }
 });
 exports.updateSystemSettings = updateSystemSettings;
+// Assign package to client
+const assignPackageToClient = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.params;
+        const { packageId } = req.body;
+        // Find the user
+        const user = yield models_1.User.findById(id);
+        if (!user) {
+            return res.status(404).json({ error: 'Client not found' });
+        }
+        // Find the package
+        const packageToAssign = yield models_1.Package.findById(packageId);
+        if (!packageToAssign) {
+            return res.status(404).json({ error: 'Package not found' });
+        }
+        // Create a new AssignedPackage
+        const today = new Date();
+        const lastDate = new Date(today.getTime() + packageToAssign.validityDays * 24 * 60 * 60 * 1000);
+        const newAssignedPackage = new models_1.AssignedPackages({
+            package: packageId,
+            lastDate: lastDate
+        });
+        // Save the new assigned package
+        const savedAssignedPackage = yield newAssignedPackage.save();
+        // Add the new assigned package to user's assignedPackages
+        user.assignedPackages.push(savedAssignedPackage._id);
+        yield user.save();
+        res.json({
+            message: 'Package assigned successfully',
+            assignedPackage: savedAssignedPackage
+        });
+    }
+    catch (error) {
+        console.error('Assign package to client error:', error);
+        res.status(500).json({ error: 'Failed to assign package to client' });
+    }
+});
+exports.assignPackageToClient = assignPackageToClient;

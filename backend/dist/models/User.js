@@ -51,6 +51,10 @@ const userSchema = new mongoose_1.default.Schema({
         enum: ['BASIC', 'PREMIUM', 'ENTERPRISE'],
         default: 'BASIC'
     },
+    assignedPackages: {
+        type: [mongoose_1.default.Schema.Types.ObjectId],
+        ref: 'assignedPackage',
+    },
     creditsTotal: {
         type: Number,
         default: 5000

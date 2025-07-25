@@ -1,8 +1,32 @@
 import { MessageMedia } from 'whatsapp-web.js';
 import fs from 'fs';
-import { WhatsAppInstance, Message, User } from '../models';
+import { WhatsAppInstance, Message, User, AssignedPackages, Usage } from '../models';
 import { formatPhoneNumber } from '../utils/helpers';
 import FileUploadController from './uploadController';
+
+// Helper function to find the next available package with credits
+const findNextAvailablePackage = async (user) => {
+  // Sort assigned packages by lastDate in descending order (most recent first)
+  const assignedPackages = await AssignedPackages.find({
+    _id: { $in: user.assignedPackages },
+    lastDate: { $gte: new Date() }
+  }).populate('package').sort({ lastDate: -1 });
+
+  // Find the first package with remaining credits
+  for (const assignedPackage of assignedPackages) {
+    const creditsUsed = await Usage.countDocuments({
+      userId: user._id,
+      assignedPackage: assignedPackage._id
+    });
+
+    const creditsTotal = (assignedPackage.package as any).credits;
+    if (creditsUsed < creditsTotal) {
+      return assignedPackage;
+    }
+  }
+
+  return null; // No packages with available credits
+};
 
 // const sendMessageUnified = async (req, res) => {
 //   const { instanceId, to, message, mediaUrl, caption = '' } = req.body;
@@ -159,6 +183,13 @@ const sendMessageUnified = async (req, res) => {
   }
 
   try {
+    // Find the current active package with available credits
+    const currentPackage = await findNextAvailablePackage(user);
+
+    if (!currentPackage) {
+      return res.status(400).json({ error: 'No active package with available credits' });
+    }
+
     // Find WhatsApp instance
     const instance = await WhatsAppInstance.findOne({
       instanceId,
@@ -329,14 +360,29 @@ const sendMessageUnified = async (req, res) => {
       timestamp: new Date()
     });
 
+    // Calculate credits used (1 credit per message)
+    const creditsUsed = 1;
+
+    // Create usage record
+    const usageRecord = new Usage({
+      userId: user._id,
+      creditsUsed: creditsUsed,
+      assignedPackage: currentPackage._id
+    });
+
     // Update message counts and store message record
     await Promise.all([
-      User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
+      User.findByIdAndUpdate(user._id, { 
+        $inc: { 
+          messagesSent: 1,
+          creditsUsed: creditsUsed 
+        } 
+      }),
       WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } }),
-      messageRecord.save()
+      messageRecord.save(),
+      usageRecord.save()
     ]);
 
-    // Send success response
     res.json({
       success: true,
       messageId: sentMessage.id._serialized,
@@ -346,6 +392,8 @@ const sendMessageUnified = async (req, res) => {
       to: to,
       type: messageType,
       timestamp: new Date().toISOString(),
+      creditsUsed: creditsUsed,
+      packageName: (currentPackage.package as any).name,
       ...responseData
     });
 
@@ -373,6 +421,13 @@ const sendMessage = async (req, res) => {
   }
 
   try {
+    // Find the current active package with available credits
+    const currentPackage = await findNextAvailablePackage(user);
+
+    if (!currentPackage) {
+      return res.status(400).json({ error: 'No active package with available credits' });
+    }
+
     const instance = await WhatsAppInstance.findOne({
       instanceId,
       userId: user._id
@@ -412,11 +467,27 @@ const sendMessage = async (req, res) => {
       timestamp: new Date()
     });
 
+    // Calculate credits used (1 credit per message)
+    const creditsUsed = 1;
+
+    // Create usage record
+    const usageRecord = new Usage({
+      userId: user._id,
+      creditsUsed: creditsUsed,
+      assignedPackage: currentPackage._id
+    });
+
     // Update message counts and store message record
     await Promise.all([
-      User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
+      User.findByIdAndUpdate(user._id, { 
+        $inc: { 
+          messagesSent: 1,
+          creditsUsed: creditsUsed 
+        } 
+      }),
       WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } }),
-      messageRecord.save()
+      messageRecord.save(),
+      usageRecord.save()
     ]);
 
     res.json({
@@ -427,7 +498,9 @@ const sendMessage = async (req, res) => {
       from: instance.phoneNumber,
       to: to,
       message: message,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      creditsUsed: creditsUsed,
+      packageName: (currentPackage.package as any).name
     });
   } catch (error) {
     console.error('Send message error:', error);
@@ -453,6 +526,13 @@ const sendMedia = async (req, res) => {
   }
 
   try {
+    // Find the current active package with available credits
+    const currentPackage = await findNextAvailablePackage(user);
+
+    if (!currentPackage) {
+      return res.status(400).json({ error: 'No active package with available credits' });
+    }
+
     const instance = await WhatsAppInstance.findOne({
       instanceId,
       userId: user._id
@@ -509,11 +589,27 @@ const sendMedia = async (req, res) => {
       timestamp: new Date()
     });
 
+    // Calculate credits used (1 credit per message)
+    const creditsUsed = 1;
+
+    // Create usage record
+    const usageRecord = new Usage({
+      userId: user._id,
+      creditsUsed: creditsUsed,
+      assignedPackage: currentPackage._id
+    });
+
     // Update message counts and store message record
     await Promise.all([
-      User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
+      User.findByIdAndUpdate(user._id, { 
+        $inc: { 
+          messagesSent: 1,
+          creditsUsed: creditsUsed 
+        } 
+      }),
       WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } }),
-      messageRecord.save()
+      messageRecord.save(),
+      usageRecord.save()
     ]);
 
     res.json({
@@ -525,7 +621,9 @@ const sendMedia = async (req, res) => {
       to: to,
       mediaType: req.file.mimetype,
       caption: caption,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      creditsUsed: creditsUsed,
+      packageName: (currentPackage.package as any).name
     });
   } catch (error) {
     // Clean up uploaded file on error
@@ -552,6 +650,13 @@ const sendMediaUrl = async (req, res) => {
   }
 
   try {
+    // Find the current active package with available credits
+    const currentPackage = await findNextAvailablePackage(user);
+
+    if (!currentPackage) {
+      return res.status(400).json({ error: 'No active package with available credits' });
+    }
+
     const instance = await WhatsAppInstance.findOne({ instanceId, userId: user._id });
     if (!instance) {
       return res.status(404).json({ error: 'WhatsApp number instance not found' });
@@ -598,11 +703,27 @@ const sendMediaUrl = async (req, res) => {
       timestamp: new Date()
     });
 
+    // Calculate credits used (1 credit per message)
+    const creditsUsed = 1;
+
+    // Create usage record
+    const usageRecord = new Usage({
+      userId: user._id,
+      creditsUsed: creditsUsed,
+      assignedPackage: currentPackage._id
+    });
+
     // Update message counts and store message record
     await Promise.all([
-      User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
+      User.findByIdAndUpdate(user._id, { 
+        $inc: { 
+          messagesSent: 1,
+          creditsUsed: creditsUsed 
+        } 
+      }),
       WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } }),
-      messageRecord.save()
+      messageRecord.save(),
+      usageRecord.save()
     ]);
 
     res.json({
@@ -614,7 +735,9 @@ const sendMediaUrl = async (req, res) => {
       to: to,
       mediaUrl: mediaUrl,
       caption: caption,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      creditsUsed: creditsUsed,
+      packageName: (currentPackage.package as any).name
     });
   } catch (error) {
     console.error('Send media URL error:', error);

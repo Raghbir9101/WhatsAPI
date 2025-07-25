@@ -18,6 +18,26 @@ const fs_1 = __importDefault(require("fs"));
 const models_1 = require("../models");
 const helpers_1 = require("../utils/helpers");
 const uploadController_1 = __importDefault(require("./uploadController"));
+// Helper function to find the next available package with credits
+const findNextAvailablePackage = (user) => __awaiter(void 0, void 0, void 0, function* () {
+    // Sort assigned packages by lastDate in descending order (most recent first)
+    const assignedPackages = yield models_1.AssignedPackages.find({
+        _id: { $in: user.assignedPackages },
+        lastDate: { $gte: new Date() }
+    }).populate('package').sort({ lastDate: -1 });
+    // Find the first package with remaining credits
+    for (const assignedPackage of assignedPackages) {
+        const creditsUsed = yield models_1.Usage.countDocuments({
+            userId: user._id,
+            assignedPackage: assignedPackage._id
+        });
+        const creditsTotal = assignedPackage.package.credits;
+        if (creditsUsed < creditsTotal) {
+            return assignedPackage;
+        }
+    }
+    return null; // No packages with available credits
+});
 // const sendMessageUnified = async (req, res) => {
 //   const { instanceId, to, message, mediaUrl, caption = '' } = req.body;
 //   const user = req.user;
@@ -150,6 +170,11 @@ const sendMessageUnified = (req, res) => __awaiter(void 0, void 0, void 0, funct
         return res.status(429).json({ error: 'Monthly message limit exceeded' });
     }
     try {
+        // Find the current active package with available credits
+        const currentPackage = yield findNextAvailablePackage(user);
+        if (!currentPackage) {
+            return res.status(400).json({ error: 'No active package with available credits' });
+        }
         // Find WhatsApp instance
         const instance = yield models_1.WhatsAppInstance.findOne({
             instanceId,
@@ -294,14 +319,27 @@ const sendMessageUnified = (req, res) => __awaiter(void 0, void 0, void 0, funct
             fileName: fileName, // Store the file name
             timestamp: new Date()
         });
+        // Calculate credits used (1 credit per message)
+        const creditsUsed = 1;
+        // Create usage record
+        const usageRecord = new models_1.Usage({
+            userId: user._id,
+            creditsUsed: creditsUsed,
+            assignedPackage: currentPackage._id
+        });
         // Update message counts and store message record
         yield Promise.all([
-            models_1.User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
+            models_1.User.findByIdAndUpdate(user._id, {
+                $inc: {
+                    messagesSent: 1,
+                    creditsUsed: creditsUsed
+                }
+            }),
             models_1.WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } }),
-            messageRecord.save()
+            messageRecord.save(),
+            usageRecord.save()
         ]);
-        // Send success response
-        res.json(Object.assign({ success: true, messageId: sentMessage.id._serialized, instanceId: instanceId, instanceName: instance.instanceName, from: instance.phoneNumber, to: to, type: messageType, timestamp: new Date().toISOString() }, responseData));
+        res.json(Object.assign({ success: true, messageId: sentMessage.id._serialized, instanceId: instanceId, instanceName: instance.instanceName, from: instance.phoneNumber, to: to, type: messageType, timestamp: new Date().toISOString(), creditsUsed: creditsUsed, packageName: currentPackage.package.name }, responseData));
     }
     catch (error) {
         // Clean up uploaded file on error
@@ -325,6 +363,11 @@ const sendMessage = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         return res.status(429).json({ error: 'Monthly message limit exceeded' });
     }
     try {
+        // Find the current active package with available credits
+        const currentPackage = yield findNextAvailablePackage(user);
+        if (!currentPackage) {
+            return res.status(400).json({ error: 'No active package with available credits' });
+        }
         const instance = yield models_1.WhatsAppInstance.findOne({
             instanceId,
             userId: user._id
@@ -358,11 +401,25 @@ const sendMessage = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             source: 'frontend', // Mark as frontend message
             timestamp: new Date()
         });
+        // Calculate credits used (1 credit per message)
+        const creditsUsed = 1;
+        // Create usage record
+        const usageRecord = new models_1.Usage({
+            userId: user._id,
+            creditsUsed: creditsUsed,
+            assignedPackage: currentPackage._id
+        });
         // Update message counts and store message record
         yield Promise.all([
-            models_1.User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
+            models_1.User.findByIdAndUpdate(user._id, {
+                $inc: {
+                    messagesSent: 1,
+                    creditsUsed: creditsUsed
+                }
+            }),
             models_1.WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } }),
-            messageRecord.save()
+            messageRecord.save(),
+            usageRecord.save()
         ]);
         res.json({
             success: true,
@@ -372,7 +429,9 @@ const sendMessage = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             from: instance.phoneNumber,
             to: to,
             message: message,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            creditsUsed: creditsUsed,
+            packageName: currentPackage.package.name
         });
     }
     catch (error) {
@@ -396,6 +455,11 @@ const sendMedia = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         return res.status(429).json({ error: 'Monthly message limit exceeded' });
     }
     try {
+        // Find the current active package with available credits
+        const currentPackage = yield findNextAvailablePackage(user);
+        if (!currentPackage) {
+            return res.status(400).json({ error: 'No active package with available credits' });
+        }
         const instance = yield models_1.WhatsAppInstance.findOne({
             instanceId,
             userId: user._id
@@ -443,11 +507,25 @@ const sendMedia = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             fileName: req.file.originalname, // Store the file name
             timestamp: new Date()
         });
+        // Calculate credits used (1 credit per message)
+        const creditsUsed = 1;
+        // Create usage record
+        const usageRecord = new models_1.Usage({
+            userId: user._id,
+            creditsUsed: creditsUsed,
+            assignedPackage: currentPackage._id
+        });
         // Update message counts and store message record
         yield Promise.all([
-            models_1.User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
+            models_1.User.findByIdAndUpdate(user._id, {
+                $inc: {
+                    messagesSent: 1,
+                    creditsUsed: creditsUsed
+                }
+            }),
             models_1.WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } }),
-            messageRecord.save()
+            messageRecord.save(),
+            usageRecord.save()
         ]);
         res.json({
             success: true,
@@ -458,7 +536,9 @@ const sendMedia = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             to: to,
             mediaType: req.file.mimetype,
             caption: caption,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            creditsUsed: creditsUsed,
+            packageName: currentPackage.package.name
         });
     }
     catch (error) {
@@ -484,6 +564,11 @@ const sendMediaUrl = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         return res.status(429).json({ error: 'Monthly message limit exceeded' });
     }
     try {
+        // Find the current active package with available credits
+        const currentPackage = yield findNextAvailablePackage(user);
+        if (!currentPackage) {
+            return res.status(400).json({ error: 'No active package with available credits' });
+        }
         const instance = yield models_1.WhatsAppInstance.findOne({ instanceId, userId: user._id });
         if (!instance) {
             return res.status(404).json({ error: 'WhatsApp number instance not found' });
@@ -523,11 +608,25 @@ const sendMediaUrl = (req, res) => __awaiter(void 0, void 0, void 0, function* (
             fileName: mediaUrl.split('/').pop() || 'media_file', // Extract filename from URL
             timestamp: new Date()
         });
+        // Calculate credits used (1 credit per message)
+        const creditsUsed = 1;
+        // Create usage record
+        const usageRecord = new models_1.Usage({
+            userId: user._id,
+            creditsUsed: creditsUsed,
+            assignedPackage: currentPackage._id
+        });
         // Update message counts and store message record
         yield Promise.all([
-            models_1.User.findByIdAndUpdate(user._id, { $inc: { messagesSent: 1 } }),
+            models_1.User.findByIdAndUpdate(user._id, {
+                $inc: {
+                    messagesSent: 1,
+                    creditsUsed: creditsUsed
+                }
+            }),
             models_1.WhatsAppInstance.findOneAndUpdate({ instanceId }, { $inc: { messagesSent: 1 } }),
-            messageRecord.save()
+            messageRecord.save(),
+            usageRecord.save()
         ]);
         res.json({
             success: true,
@@ -538,7 +637,9 @@ const sendMediaUrl = (req, res) => __awaiter(void 0, void 0, void 0, function* (
             to: to,
             mediaUrl: mediaUrl,
             caption: caption,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            creditsUsed: creditsUsed,
+            packageName: currentPackage.package.name
         });
     }
     catch (error) {

@@ -67,7 +67,7 @@ class FlowEngine {
     // Handle response from user in an existing conversation session
     handleSessionResponse(session, message) {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b, _c, _d;
+            var _a, _b, _c;
             try {
                 const flow = session.flowId;
                 const userResponse = message.body || '';
@@ -96,13 +96,14 @@ class FlowEngine {
                     // Handle multiple choice responses
                     const matchedChoice = session.expectedResponse.choices.find(choice => userResponse.toLowerCase().trim() === choice.value.toLowerCase().trim());
                     if (matchedChoice) {
-                        // Find target node from flow edges using the choice value as sourceHandle
-                        const targetEdge = flow.edges.find(edge => edge.source === session.currentNodeId &&
-                            edge.sourceHandle === matchedChoice.value);
-                        nextNodeId = targetEdge ? targetEdge.target : matchedChoice.targetNodeId;
+                        nextNodeId = matchedChoice.targetNodeId;
                         responseValid = true;
                         console.log(`User selected choice: ${matchedChoice.label}`);
-                        console.log(`Routing to next node: ${nextNodeId}`);
+                        // If no targetNodeId is set, try to get the next node automatically
+                        if (!nextNodeId) {
+                            nextNodeId = yield this.getNextNodeId(currentNode, flow);
+                            console.log(`No targetNodeId set for choice, using automatic next node: ${nextNodeId}`);
+                        }
                     }
                 }
                 else {
@@ -122,21 +123,15 @@ class FlowEngine {
                 }
                 // Update session variables
                 session.variables = context.variables;
+                session.isWaitingForResponse = false;
                 if (nextNodeId) {
-                    // Find the next node first to determine how to handle the session
+                    // Move to next node
+                    session.currentNodeId = nextNodeId;
+                    yield session.save();
                     const nextNode = flow.nodes.find(node => node.id === nextNodeId);
                     if (nextNode) {
-                        // Only set isWaitingForResponse = false if next node is NOT a response node
-                        // Response nodes will manage their own waiting state
-                        if (nextNode.type !== 'response') {
-                            session.isWaitingForResponse = false;
-                        }
-                        // Move to next node
-                        session.currentNodeId = nextNodeId;
-                        yield session.save();
                         // Add session to context for flow execution
                         context.session = session;
-                        console.log(`Executing next node: ${nextNode.type} - ${((_d = nextNode.data) === null || _d === void 0 ? void 0 : _d.label) || nextNode.id}`);
                         yield this.executeNode(nextNode, flow, context);
                     }
                     else {
@@ -146,7 +141,6 @@ class FlowEngine {
                 }
                 else {
                     // No next node, end session
-                    session.isWaitingForResponse = false;
                     yield this.endSession(session, 'completed');
                 }
             }
@@ -411,30 +405,28 @@ class FlowEngine {
             const contactNumber = (0, helpers_1.formatPhoneNumber)(context.message.from);
             // Send the message first
             yield this.sendMessage(config, context);
-            // Use existing session if available, otherwise create new one
-            let session = context.session;
+            // Create or update conversation session
+            let session = yield models_1.ConversationSession.findOne({
+                userId: context.userId,
+                instanceId: context.instanceId,
+                contactNumber,
+                isActive: true
+            });
             if (!session) {
-                // No existing session, find or create one
-                session = yield models_1.ConversationSession.findOne({
+                session = new models_1.ConversationSession({
+                    flowId: flow._id,
                     userId: context.userId,
                     instanceId: context.instanceId,
                     contactNumber,
-                    isActive: true
+                    currentNodeId: node.id,
+                    variables: context.variables
                 });
-                if (!session) {
-                    session = new models_1.ConversationSession({
-                        flowId: flow._id,
-                        userId: context.userId,
-                        instanceId: context.instanceId,
-                        contactNumber,
-                        currentNodeId: node.id,
-                        variables: context.variables
-                    });
-                }
             }
-            // Update session for this response node
-            session.currentNodeId = node.id;
-            session.variables = Object.assign(Object.assign({}, session.variables), context.variables);
+            else {
+                session.currentNodeId = node.id;
+                session.variables = Object.assign(Object.assign({}, session.variables), context.variables);
+            }
+            // Set up expected response configuration
             session.isWaitingForResponse = true;
             session.expectedResponse = {
                 type: config.responseType || 'any',
@@ -445,9 +437,7 @@ class FlowEngine {
             session.lastActivityAt = new Date();
             session.messageCount += 1;
             yield session.save();
-            console.log(`Session updated for response node: ${node.data.label || node.id}`);
-            console.log(`Session waiting for response: ${session.isWaitingForResponse}`);
-            console.log(`Expected response type: ${session.expectedResponse.type}`);
+            console.log(`Session created/updated for response node: ${node.data.label}`);
         });
     }
     // End a conversation session

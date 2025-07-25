@@ -1,4 +1,4 @@
-import { User, Package, WhatsAppInstance, Message, BulkCampaign } from '../models';
+import { User, Package, WhatsAppInstance, Message, BulkCampaign, AssignedPackages, Usage } from '../models';
 import { Request, Response } from 'express';
 
 // Get admin statistics
@@ -107,31 +107,66 @@ const getClients = async (req: Request, res: Response) => {
     const skip = (Number(page) - 1) * Number(limit);
     const totalClients = await User.countDocuments(query);
 
+    // Get users without population since assignedPackages uses userId reference
     const clients = await User.find(query)
       .select('-password -apiKey')
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: 1 })
       .skip(skip)
-      .limit(Number(limit));
+      .limit(Number(limit))
+      .exec();
+      
+    // Manually fetch assignedPackages for each user since the relationship is userId-based
+    const clientsWithPackages = await Promise.all(
+      clients.map(async (client) => {
+        const assignedPackages = await AssignedPackages.find({ _id: { $in: client.assignedPackages } })
+          .populate('package')
+          .exec();
+        
+        return {
+          ...client.toObject(),
+          assignedPackages
+        };
+      })
+    );
 
     // Get WhatsApp instances count for each client
     const clientsWithInstances = await Promise.all(
-      clients.map(async (client) => {
+      clientsWithPackages.map(async (client) => {
         const whatsappInstances = await WhatsAppInstance.countDocuments({ userId: client._id });
+        
+        // Find the current active package
+        const currentPackage = await AssignedPackages.findOne({
+          _id: { $in: client.assignedPackages },
+          lastDate: { $gte: new Date() }
+        }).populate('package');
+
+        // Calculate credits remaining by counting usage entries for the current package
+        const creditsUsed = currentPackage 
+          ? await Usage.countDocuments({ 
+              userId: client._id, 
+              assignedPackage: currentPackage._id 
+            }) 
+          : 0;
+
+        const creditsTotal = currentPackage ? (currentPackage.package as any).credits : 0;
+        const creditsRemaining = Math.max(0, creditsTotal - creditsUsed);
+
         return {
           id: client._id,
           email: client.email,
           name: client.name,
           company: client.company,
-          package: client.packageType,
+          packageType: client.packageType,
           validityDate: client.validityDate.toISOString().split('T')[0],
-          creditsTotal: client.creditsTotal,
-          creditsUsed: client.creditsUsed,
-          creditsRemaining: client.creditsTotal - client.creditsUsed,
+          creditsTotal,
+          creditsUsed,
+          creditsRemaining,
           messagesSent: client.messagesSent,
           status: client.status,
           createdAt: client.createdAt.toISOString().split('T')[0],
           lastLogin: client.lastLogin.toISOString().split('T')[0],
-          whatsappInstances
+          whatsappInstances,
+          assignedPackages: (client.assignedPackages)
         };
       })
     );
@@ -151,6 +186,27 @@ const getClients = async (req: Request, res: Response) => {
   }
 };
 
+// loop through all users, create a new assignedPackages with package of id: 6870f43c564218b06c96fff2, retrieve it's _id and save it in user's assignedPackage array of object ids
+// async function looper(){
+//   const allUsers = await User.find({})
+//   const packages = await Package.findById("6870f43c564218b06c96fff2")
+//   let today = new Date()
+//   //add package validity days to today's date i.e if 256 days then add 256 days to today's date
+//   let lastDate = new Date(today.getTime() + packages.validityDays * 24 * 60 * 60 * 1000)
+//   console.log(lastDate)
+//   allUsers.map(async (el)=>{
+//     let user = el
+//     const newPackage = new AssignedPackages({
+//       package:"6870f43c564218b06c96fff2",
+//       lastDate:lastDate
+//     })
+//     const obj = await newPackage.save();
+//     user.assignedPackages = [obj._id];
+//     await user.save();
+//   })
+// }
+// looper()
+
 // Get client by ID
 const getClient = async (req: Request, res: Response) => {
   try {
@@ -163,6 +219,23 @@ const getClient = async (req: Request, res: Response) => {
 
     const whatsappInstances = await WhatsAppInstance.countDocuments({ userId: client._id });
 
+    // Find the current active package
+    const currentPackage = await AssignedPackages.findOne({
+      _id: { $in: client.assignedPackages },
+      lastDate: { $gte: new Date() }
+    }).populate('package');
+
+    // Calculate credits remaining by counting usage entries for the current package
+    const creditsUsed = currentPackage 
+      ? await Usage.countDocuments({ 
+          userId: client._id, 
+          assignedPackage: currentPackage._id 
+        }) 
+      : 0;
+
+    const creditsTotal = currentPackage ? (currentPackage.package as any).credits : 0;
+    const creditsRemaining = Math.max(0, creditsTotal - creditsUsed);
+
     res.json({
       id: client._id,
       email: client.email,
@@ -170,9 +243,9 @@ const getClient = async (req: Request, res: Response) => {
       company: client.company,
       package: client.packageType,
       validityDate: client.validityDate.toISOString().split('T')[0],
-      creditsTotal: client.creditsTotal,
-      creditsUsed: client.creditsUsed,
-      creditsRemaining: client.creditsTotal - client.creditsUsed,
+      creditsTotal,
+      creditsUsed,
+      creditsRemaining,
       messagesSent: client.messagesSent,
       status: client.status,
       createdAt: client.createdAt.toISOString().split('T')[0],
@@ -389,6 +462,50 @@ const updateSystemSettings = async (req: Request, res: Response) => {
   }
 };
 
+// Assign package to client
+const assignPackageToClient = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { packageId } = req.body;
+
+    // Find the user
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    // Find the package
+    const packageToAssign = await Package.findById(packageId);
+    if (!packageToAssign) {
+      return res.status(404).json({ error: 'Package not found' });
+    }
+
+    // Create a new AssignedPackage
+    const today = new Date();
+    const lastDate = new Date(today.getTime() + packageToAssign.validityDays * 24 * 60 * 60 * 1000);
+
+    const newAssignedPackage = new AssignedPackages({
+      package: packageId,
+      lastDate: lastDate
+    });
+
+    // Save the new assigned package
+    const savedAssignedPackage = await newAssignedPackage.save();
+
+    // Add the new assigned package to user's assignedPackages
+    user.assignedPackages.push(savedAssignedPackage._id);
+    await user.save();
+
+    res.json({ 
+      message: 'Package assigned successfully',
+      assignedPackage: savedAssignedPackage
+    });
+  } catch (error) {
+    console.error('Assign package to client error:', error);
+    res.status(500).json({ error: 'Failed to assign package to client' });
+  }
+};
+
 export {
   getAdminStats,
   getClients,
@@ -401,5 +518,6 @@ export {
   updatePackage,
   deletePackage,
   getSystemSettings,
-  updateSystemSettings
+  updateSystemSettings,
+  assignPackageToClient
 }; 
